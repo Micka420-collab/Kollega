@@ -5,3 +5,9 @@ edition.workspace = true
 description = "Domaine pur — aucune entrée-sortie (invariant 11)"
 
 [dependencies]
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
