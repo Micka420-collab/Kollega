@@ -19,9 +19,9 @@ Remote : absent → commits locaux.
 | 8 — Propriétés surface pure | non commencé | 0 | |
 | 9 — Plafond et crédit, noyau pur | terminé | 1 | Budget::charge + proptest conservation ; tour 1 : débordement i64 → plafond (pas erreur), refus avant facturation ; docs/credits-concurrence.md |
 | 8 — Propriétés surface pure | terminé | 1 | proptest core/audit/policy ; tour 1 : le garde-fou a attrapé proptest en dev-dep de core (ajouté à la liste blanche, décision consignée) |
-| 10 — Boucle d'agent, machine à états | non commencé | 0 | Seulement si 2-9 approfondis |
-| 11 — Matrice invariant → test | non commencé | 0 | |
-| 12 — Méthode de travail (document) | non commencé | 0 | |
+| 10 — Boucle d'agent, machine à états | terminé | 0 | drive() pur, 6 scénarios dont reprise après sérialisation JSON identique au parcours direct |
+| 11 — Matrice invariant → test | terminé | 0 | 13 invariants, honnête ; inv. 1 et 13 non exécutés soulignés |
+| 12 — Méthode de travail (document) | terminé | 0 | 4 paliers, mandat, 10 questions réfutables |
 | 13 — Corrections CLAUDE.md proposées | non commencé | 0 | |
 
 Laissé en suspens par la session précédente (rapport du 27/07) : M0 non

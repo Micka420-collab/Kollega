@@ -1,3 +1,36 @@
+# Questions des sessions autonomes
+
+## Session du 28/07/2026 (choix réversibles pris seul)
+
+1. **ADR-0006 — vérification des mots de passe.** Remplacement de la liste
+   blanche argon2 par plancher (m ≥ 8 Mio) + plafond (m ≤ 256 Mio) + re-hachage
+   à la connexion. Décision d'architecture, prise parce que le brief la
+   demandait explicitement ; bornes chiffrées à valider.
+2. **Modes de bornes des politiques.** Défauts recommandés : montant souple,
+   destinataires souple, chemins dur. Surchargeables. À confirmer.
+3. **Format de hachage v3** — ajout de `height` dans l'enregistrement. Vecteurs
+   régénérés. C'est la DERNIÈRE fenêtre gratuite avant une chaîne en production.
+4. **Ancre au client** (BLOC 5) : double témoin dont remise quotidienne au
+   dirigeant. Engagement produit, « révocable » tant que rien n'est livré.
+5. **`proptest` dans la liste blanche de test de `kollega-core`** : ajouté
+   après que le garde-fou du graphe l'a (correctement) refusé. Pur, sans E/S,
+   comme `serde_json`.
+6. **Numéro d'ADR 0006** (le 0005 a été pris par l'authentification hors
+   contexte la nuit du 27).
+7. **`kollega-runtime` gagne `serde`** (dépendance, pas dev) pour la
+   sérialisation de l'état de tâche — indispensable à la reprise. Périphérie,
+   pas le domaine : hors invariant 11.
+
+## Questions architecturales non tranchées (28/07)
+
+- Réconcilier l'`AuditEvent` de la machine à états (BLOC 10) avec la chaîne
+  `kollega-audit` : la boucle de production devra journaliser DANS la chaîne
+  chaînée, pas dans un `Vec` local. Couture identifiée, non cousue.
+- Brancher le vrai `kollega-policy` (avec `ToolRule`) dans la machine à états,
+  à la place du trait `PolicyEngine` local. Décision de câblage, jalon M3.
+
+---
+
 # Questions de la session autonome du 27/07/2026
 
 Règle appliquée : détail réversible → option la plus conservatrice, notée
