@@ -48,8 +48,10 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod anchor;
 pub mod canonical;
 pub mod chain;
 
+pub use anchor::{Anchor, AnchorPublisher, AnchorViolation, InMemoryAnchorPublisher};
 pub use canonical::CanonicalValue;
 pub use chain::{ChainBreak, ChainBreakKind, ChainedEntry, EntryContent, Hash32, OrgChain};
