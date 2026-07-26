@@ -5,6 +5,7 @@ edition.workspace = true
 description = "Persistance PostgreSQL — point de passage unique vers la base"
 
 [dependencies]
+log.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

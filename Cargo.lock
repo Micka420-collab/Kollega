@@ -880,6 +880,7 @@ version = "0.1.0"
 name = "kollega-store"
 version = "0.1.0"
 dependencies = [
+ "log",
  "sqlx",
  "thiserror",
  "tokio",

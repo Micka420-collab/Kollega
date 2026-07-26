@@ -1,19 +1,26 @@
 //! Test d'isolation multi-tenant (invariant 1) — la seule preuve qui compte.
 //!
-//! Nécessite une base PostgreSQL réelle avec pgvector, désignée par la
-//! variable d'environnement `TEST_MIGRATE_DATABASE_URL` (rôle capable
-//! d'appliquer les migrations — en CI, le superutilisateur du conteneur).
-//! Sans elle, le test est sauté avec un message explicite : il s'exécute en
-//! intégration continue, où le service PostgreSQL est provisionné.
+//! Nécessite une base PostgreSQL réelle avec pgvector, désignée par
+//! `TEST_MIGRATE_DATABASE_URL` : un rôle qui applique les migrations et peut
+//! exécuter le DDL du scénario de sensibilité — en CI, le superutilisateur
+//! bootstrap du conteneur (en production, kollega_migrate est un propriétaire
+//! NON superutilisateur, cf. migrations/0001). Sans cette variable, le test
+//! est sauté avec un message explicite : il s'exécute en intégration continue.
 //!
 //! Déroulé :
 //! 1. migrations appliquées, mot de passe du rôle `kollega_app` posé ;
-//! 2. données insérées pour deux organisations A et B via le point de passage
-//!    unique (`Db::org_transaction`) ;
-//! 3. dans le contexte de A, un SELECT sans clause WHERE ne voit QUE A ;
-//! 4. hors de tout contexte, la requête ÉCHOUE (fermé par défaut) ;
-//! 5. sensibilité : RLS désactivée à la main => la fuite devient visible —
+//! 2. témoins structurels : RLS activée ET forcée sur chaque table tenant,
+//!    kollega_app sans BYPASSRLS — détecte la perte d'ENABLE ou de FORCE et
+//!    l'octroi de BYPASSRLS, quel que soit le propriétaire des tables ;
+//! 3. données insérées pour deux organisations A et B via le point de passage
+//!    unique (`Db::org_transaction`), chacune témoin de sa propre ligne ;
+//! 4. dans le contexte de A, un SELECT sans clause WHERE ne voit QUE A ;
+//! 5. hors de tout contexte, la requête ÉCHOUE (fermé par défaut) ;
+//! 6. sensibilité : RLS désactivée à la main => la fuite devient visible —
 //!    preuve que ce test échouerait si la RLS tombait — puis RLS réactivée.
+//!
+//! Une politique supprimée est aussi détectée : fermé par défaut, l'étape 4
+//! ne verrait plus même les lignes de A.
 
 use sqlx::{Connection, PgConnection, Row};
 use uuid::Uuid;
@@ -63,12 +70,38 @@ async fn tenant_isolation_holds_and_the_test_is_sensitive() {
         .expect("mot de passe kollega_app");
 
     let mut admin = PgConnection::connect(&migrate_url).await.expect("admin");
-    // Le nettoyage se fait avec le rôle de migration (superutilisateur en CI),
-    // qui n'est pas soumis à la RLS.
+    // TRUNCATE n'est pas soumis aux politiques RLS : le rôle de migration
+    // (propriétaire des tables, superutilisateur en CI) peut nettoyer.
     sqlx::query("TRUNCATE users, organizations")
         .execute(&mut admin)
         .await
         .expect("nettoyage");
+
+    // Témoins structurels : la RLS est activée ET forcée sur chaque table
+    // tenant, et kollega_app n'a pas BYPASSRLS. Détecte la perte d'ENABLE,
+    // la perte de FORCE (invisible autrement : le propriétaire de CI est
+    // superutilisateur) et l'octroi de BYPASSRLS.
+    let flags = sqlx::query(
+        "SELECT relname::text, relrowsecurity, relforcerowsecurity
+         FROM pg_class
+         WHERE relname IN ('organizations', 'users') AND relkind = 'r'",
+    )
+    .fetch_all(&mut admin)
+    .await
+    .expect("catalogue pg_class");
+    assert_eq!(flags.len(), 2, "les deux tables tenant doivent exister");
+    for row in &flags {
+        let table: String = row.get(0);
+        assert!(row.get::<bool, _>(1), "RLS non activée sur {table}");
+        assert!(row.get::<bool, _>(2), "RLS non forcée sur {table}");
+    }
+    let bypass: bool =
+        sqlx::query("SELECT rolbypassrls FROM pg_roles WHERE rolname = 'kollega_app'")
+            .fetch_one(&mut admin)
+            .await
+            .expect("pg_roles")
+            .get(0);
+    assert!(!bypass, "kollega_app ne doit jamais avoir BYPASSRLS");
 
     // 2. Deux organisations, insérées par le point de passage unique.
     let db = kollega_store::Db::connect(&app_url_from(&migrate_url))
@@ -99,12 +132,16 @@ async fn tenant_isolation_holds_and_the_test_is_sensitive() {
         tx.commit().await.expect("commit");
     }
 
-    // Témoin : vu du rôle de migration, les deux organisations existent bien.
-    // Sans ce témoin, « zéro fuite » pourrait n'être que « zéro donnée ».
-    assert_eq!(
-        count(&mut admin, "SELECT count(*) FROM organizations").await,
-        2
-    );
+    // Témoin de données : chaque organisation voit sa propre ligne via le
+    // point de passage unique — « zéro fuite » n'est pas « zéro donnée ».
+    // Aucune hypothèse superutilisateur ici.
+    for org in [org_a, org_b] {
+        let mut tx = db.org_transaction(org).await.expect("transaction témoin");
+        assert_eq!(
+            count(&mut tx, "SELECT count(*) FROM organizations").await,
+            1
+        );
+    }
 
     // 3. Dans le contexte de A : uniquement les lignes de A, sans clause WHERE.
     let mut tx = db.org_transaction(org_a).await.expect("transaction A");

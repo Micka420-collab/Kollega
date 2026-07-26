@@ -2,6 +2,6 @@
 name = "kollega-core"
 version.workspace = true
 edition.workspace = true
-description = "Domaine pur — aucune entrée-sortie (invariant 9)"
+description = "Domaine pur — aucune entrée-sortie (invariant 11)"
 
 [dependencies]

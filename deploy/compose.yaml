@@ -1,9 +1,9 @@
-# Démarrage local : podman compose --file deploy/compose.yaml up
-# Prérequis : définir dans l'environnement (jamais dans ce fichier) :
-#   KOLLEGA_MIGRATE_DB_PASSWORD  — mot de passe du rôle kollega_migrate
-#   KOLLEGA_APP_DB_PASSWORD      — mot de passe du rôle kollega_app
-# Première mise en route : podman compose --file deploy/compose.yaml run --rm app migrate
-# (applique les migrations avec kollega_migrate, puis pose le mot de passe de kollega_app)
+# Démarrage local :
+#   1) migrations : podman compose --file deploy/compose.yaml --profile setup run --rm migrate
+#   2) serveur    : podman compose --file deploy/compose.yaml up
+# Prérequis, définis dans l'environnement (jamais dans ce fichier) :
+#   KOLLEGA_MIGRATE_DB_PASSWORD  — rôle kollega_migrate (service migrate uniquement)
+#   KOLLEGA_APP_DB_PASSWORD      — rôle kollega_app
 services:
   db:
     image: docker.io/pgvector/pgvector:pg16
@@ -19,6 +19,23 @@ services:
       timeout: 3s
       retries: 10
 
+  # Service ponctuel : SEUL détenteur des identifiants kollega_migrate
+  # (propriétaire du schéma). Le serveur exposé au réseau ne les possède
+  # jamais — défense en profondeur de l'invariant 1.
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile
+    image: localhost/kollega:dev
+    profiles: ["setup"]
+    command: ["migrate"]
+    environment:
+      KOLLEGA_MIGRATE_DATABASE_URL: postgres://kollega_migrate:${KOLLEGA_MIGRATE_DB_PASSWORD:?definir KOLLEGA_MIGRATE_DB_PASSWORD}@db:5432/kollega
+      KOLLEGA_APP_DB_PASSWORD: ${KOLLEGA_APP_DB_PASSWORD:?definir KOLLEGA_APP_DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+
   app:
     build:
       context: ..
@@ -27,9 +44,6 @@ services:
     environment:
       # L'application ne se connecte QU'AVEC kollega_app (sans BYPASSRLS).
       DATABASE_URL: postgres://kollega_app:${KOLLEGA_APP_DB_PASSWORD:?definir KOLLEGA_APP_DB_PASSWORD}@db:5432/kollega
-      # Utilisés uniquement par `kollega migrate`.
-      KOLLEGA_MIGRATE_DATABASE_URL: postgres://kollega_migrate:${KOLLEGA_MIGRATE_DB_PASSWORD:?definir KOLLEGA_MIGRATE_DB_PASSWORD}@db:5432/kollega
-      KOLLEGA_APP_DB_PASSWORD: ${KOLLEGA_APP_DB_PASSWORD:?definir KOLLEGA_APP_DB_PASSWORD}
       KOLLEGA_LISTEN: 0.0.0.0:8080
     depends_on:
       db:

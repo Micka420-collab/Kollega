@@ -19,6 +19,9 @@ ALTER TABLE organizations FORCE ROW LEVEL SECURITY;
 -- Sur organizations, la colonne d'isolation est la clé primaire elle-même.
 CREATE POLICY tenant_isolation ON organizations
   USING (id = current_setting('app.current_org')::uuid);
+-- Privilèges explicites, par table, indépendants du rôle qui exécute la
+-- migration (cf. 0001) : les lignes, elles, restent filtrées par la RLS.
+GRANT SELECT, INSERT, UPDATE, DELETE ON organizations TO kollega_app;
 
 CREATE TABLE users (
   id UUID PRIMARY KEY,
@@ -36,3 +39,4 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON users
   USING (org_id = current_setting('app.current_org')::uuid);
+GRANT SELECT, INSERT, UPDATE, DELETE ON users TO kollega_app;

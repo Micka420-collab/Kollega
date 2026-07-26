@@ -3,15 +3,20 @@
 //! Ce test ÉCHOUE si une dépendance interdite apparaît :
 //! - une arête interne hors du graphe `core → policy/audit/memory/tools/model
 //!   → runtime → store, api → cli` ;
-//! - une dépendance externe de `kollega-core` hors de la liste blanche
-//!   (invariant 9 : notamment sqlx, reqwest ou tokio dans le domaine).
+//! - une dépendance externe de `kollega-core` hors de la liste blanche, dans
+//!   N'IMPORTE QUELLE section (invariant 11 : notamment sqlx, reqwest ou
+//!   tokio dans le domaine, y compris en dev-dependencies).
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
-/// Seules dépendances externes autorisées dans kollega-core (invariant 9).
+/// Seules dépendances externes autorisées dans kollega-core (invariant 11).
 const CORE_EXTERNAL_ALLOWED: &[&str] = &["serde", "thiserror", "uuid", "time"];
+
+/// En test uniquement, le domaine peut en plus utiliser un sérialiseur concret
+/// pour verrouiller ses formes sérialisées — toujours sans entrée-sortie.
+const CORE_DEV_ALLOWED: &[&str] = &["serde", "thiserror", "uuid", "time", "serde_json"];
 
 /// Arêtes internes autorisées : crate -> dépendances kollega-* permises.
 fn allowed_internal(name: &str) -> &'static [&'static str] {
@@ -116,9 +121,18 @@ fn dependency_graph_is_respected() {
             for dep in dependency_names(&manifest, "dependencies") {
                 assert!(
                     CORE_EXTERNAL_ALLOWED.contains(&dep.as_str()),
-                    "invariant 9 violé : kollega-core dépend de {dep} \
+                    "invariant 11 violé : kollega-core dépend de {dep} \
                      (autorisées : {CORE_EXTERNAL_ALLOWED:?})"
                 );
+            }
+            for section in ["dev-dependencies", "build-dependencies"] {
+                for dep in dependency_names(&manifest, section) {
+                    assert!(
+                        CORE_DEV_ALLOWED.contains(&dep.as_str()),
+                        "invariant 11 violé : kollega-core dépend de {dep} en {section} \
+                         (autorisées : {CORE_DEV_ALLOWED:?})"
+                    );
+                }
             }
         }
     }

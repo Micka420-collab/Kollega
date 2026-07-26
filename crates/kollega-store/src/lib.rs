@@ -92,17 +92,27 @@ pub async fn run_migrations(migrate_database_url: &str) -> Result<(), StoreError
 /// le mot de passe vient de l'environnement de l'exploitant, jamais d'une
 /// migration (aucun secret dans l'historique). `ALTER ROLE` n'accepte pas de
 /// paramètre lié : le littéral est construit en doublant les apostrophes.
+///
+/// La journalisation d'énoncés de sqlx est coupée sur cette connexion (y
+/// compris le chemin « requête lente » à WARN) : le secret ne doit apparaître
+/// dans aucun journal client. Risque résiduel côté serveur : avec
+/// `log_statement='ddl'` ou en cas d'échec (`log_min_error_statement`),
+/// PostgreSQL journalise l'énoncé — l'exploitant garde les valeurs par défaut.
 pub async fn set_app_role_password(
     migrate_database_url: &str,
     password: &str,
 ) -> Result<(), StoreError> {
-    let pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(migrate_database_url)
-        .await?;
+    use sqlx::postgres::PgConnectOptions;
+    use sqlx::ConnectOptions;
+    use std::str::FromStr;
+
+    let options = PgConnectOptions::from_str(migrate_database_url)?
+        .log_statements(log::LevelFilter::Off)
+        .log_slow_statements(log::LevelFilter::Off, std::time::Duration::ZERO);
+    let mut conn = options.connect().await?;
     let literal = password.replace('\'', "''");
     let statement = format!("ALTER ROLE kollega_app WITH LOGIN PASSWORD '{literal}'");
-    sqlx::query(&statement).execute(&pool).await?;
+    sqlx::query(&statement).execute(&mut conn).await?;
     Ok(())
 }
 
