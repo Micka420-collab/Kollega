@@ -1,0 +1,11 @@
+# Artefacts de compilation
+/target
+
+# Secrets et configuration locale — jamais dans l'historique
+.env
+*.local
+
+# Documents business confidentiels (dossier banque, budget, audit stratégique) :
+# ils ne font pas partie du code livré et ne doivent jamais entrer dans un
+# dépôt qui passera en CI ou chez un client.
+/doc/
