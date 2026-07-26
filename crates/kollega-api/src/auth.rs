@@ -58,17 +58,44 @@ pub fn hash_password(password: &str) -> Result<String, PasswordError> {
     Ok(hash.to_string())
 }
 
+/// Profils de coût acceptés à la VÉRIFICATION (m KiB, t, p).
+///
+/// La vérification relit l'algorithme et les coûts depuis la chaîne stockée
+/// (comportement de la crate argon2) : sans cette liste blanche, une chaîne
+/// affaiblie (`m=8`) serait acceptée, et une chaîne gonflée (`m=4 Tio`)
+/// serait une primitive de déni de service mémoire sur le chemin de
+/// connexion. Lors d'un durcissement futur, AJOUTER le nouveau profil ici
+/// sans retirer l'ancien tant que des empreintes anciennes existent.
+const ACCEPTED_PROFILES: &[(u32, u32, u32)] = &[(MEMORY_KIB, ITERATIONS, PARALLELISM)];
+
 /// Vérifie un mot de passe contre une chaîne PHC stockée.
 ///
+/// La chaîne doit être `argon2id`, version 0x13, avec un profil de coûts de
+/// la liste blanche [`ACCEPTED_PROFILES`] : tout autre algorithme
+/// (`argon2i`, `argon2d`), version ou profil est traité comme une empreinte
+/// corrompue — jamais comme une simple non-correspondance.
+///
 /// `Ok(true)` : correspond. `Ok(false)` : ne correspond pas. `Err(…)` : la
-/// chaîne stockée est illisible — à traiter comme une anomalie, pas comme un
-/// simple mauvais mot de passe.
+/// chaîne stockée est illisible ou hors profil — une anomalie à traiter.
 pub fn verify_password(password: &str, stored_hash: &str) -> Result<bool, PasswordError> {
     let parsed = PasswordHash::new(stored_hash).map_err(|_| PasswordError::InvalidStoredHash)?;
     // Une chaîne PHC sans empreinte (sel seul) est structurellement valide
     // mais inutilisable comme crédential stocké : c'est une corruption, pas
     // une non-correspondance.
     if parsed.hash.is_none() {
+        return Err(PasswordError::InvalidStoredHash);
+    }
+    // Épinglage : l'algorithme, la version et les coûts relus depuis la
+    // chaîne doivent appartenir au profil figé.
+    if parsed.algorithm.as_str() != "argon2id" {
+        return Err(PasswordError::InvalidStoredHash);
+    }
+    if parsed.version != Some(Version::V0x13.into()) {
+        return Err(PasswordError::InvalidStoredHash);
+    }
+    let params = Params::try_from(&parsed).map_err(|_| PasswordError::InvalidStoredHash)?;
+    let profile = (params.m_cost(), params.t_cost(), params.p_cost());
+    if !ACCEPTED_PROFILES.contains(&profile) {
         return Err(PasswordError::InvalidStoredHash);
     }
     match hasher()?.verify_password(password.as_bytes(), &parsed) {
@@ -133,6 +160,36 @@ mod tests {
                 "entrée corrompue acceptée : {corrupt:?}"
             );
         }
+    }
+
+    #[test]
+    fn downgraded_algorithm_is_rejected() {
+        // Chaîne argon2i réelle et valide : refusée à la vérification —
+        // l'algorithme est épinglé, pas relu aveuglément depuis la chaîne.
+        let salt = SaltString::generate(&mut OsRng);
+        let params = Params::new(MEMORY_KIB, ITERATIONS, PARALLELISM, Some(OUTPUT_LEN)).unwrap();
+        let weak = Argon2::new(Algorithm::Argon2i, Version::V0x13, params);
+        let phc = weak.hash_password(b"x", &salt).unwrap().to_string();
+        assert!(phc.starts_with("$argon2i$"));
+        assert_eq!(
+            verify_password("x", &phc),
+            Err(PasswordError::InvalidStoredHash)
+        );
+    }
+
+    #[test]
+    fn weakened_cost_profile_is_rejected() {
+        // Chaîne argon2id réelle mais m=8,t=1 : hors liste blanche, refusée
+        // — pas de rétrogradation silencieuse ni de m démesuré (DoS mémoire).
+        let salt = SaltString::generate(&mut OsRng);
+        let params = Params::new(8, 1, 1, Some(OUTPUT_LEN)).unwrap();
+        let weak = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+        let phc = weak.hash_password(b"x", &salt).unwrap().to_string();
+        assert!(phc.starts_with("$argon2id$"));
+        assert_eq!(
+            verify_password("x", &phc),
+            Err(PasswordError::InvalidStoredHash)
+        );
     }
 
     #[test]

@@ -49,13 +49,17 @@ pub enum EmailError {
 /// même validation — impossible de la contourner par un JSON.
 ///
 /// Règles, délibérément simples et strictes (choix consignés dans
-/// `docs/questions-nuit.md`) :
+/// `docs/questions-nuit.md`) — **ASCII uniquement** : les homoglyphes
+/// Unicode (`exаmple.com` avec un `а` cyrillique) sont un vecteur
+/// d'usurpation visuelle dans une plateforme multi-tenant ; accepter l'IDN
+/// serait une décision explicite avec punycode, pas un effet de bord.
 /// - blancs de tête et de queue retirés, puis interdits partout ;
 /// - exactement un `@` ;
-/// - partie locale : 1 à 64 octets ;
+/// - partie locale : 1 à 64 octets, caractères ASCII de l'ensemble
+///   `atext` de la RFC 5321 plus le point ;
 /// - domaine : au moins un point ; chaque étiquette est non vide (pas de
 ///   point en tête, en queue, ni doublé), composée de lettres, chiffres et
-///   tirets, sans tiret en tête ni en queue d'étiquette ;
+///   tirets **ASCII**, sans tiret en tête ni en queue d'étiquette ;
 /// - longueur totale ≤ 254 octets après normalisation ;
 /// - normalisation : adresse entière en minuscules (pratique universelle,
 ///   même si la RFC autorise une partie locale sensible à la casse).
@@ -85,11 +89,18 @@ impl Email {
         if local.is_empty() || local.len() > 64 {
             return Err(EmailError::InvalidLocalPart);
         }
+        // ASCII `atext` (RFC 5321) plus le point — jamais d'Unicode : les
+        // homoglyphes sont un vecteur d'usurpation, pas une tolérance.
+        let allowed_local =
+            |c: char| c.is_ascii_alphanumeric() || "!#$%&'*+-/=?^_`{|}~.".contains(c);
+        if !local.chars().all(allowed_local) {
+            return Err(EmailError::InvalidLocalPart);
+        }
         let valid_label = |label: &str| {
             !label.is_empty()
                 && !label.starts_with('-')
                 && !label.ends_with('-')
-                && label.chars().all(|c| c.is_alphanumeric() || c == '-')
+                && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
         };
         if !domain.contains('.') || !domain.split('.').all(valid_label) {
             return Err(EmailError::InvalidDomain);
@@ -156,7 +167,7 @@ mod tests {
 
     #[test]
     fn email_rejects_invalid() {
-        let cases: [(&str, EmailError); 14] = [
+        let cases: [(&str, EmailError); 18] = [
             ("", EmailError::Empty),
             ("   ", EmailError::Empty),
             ("sans-arobase.example.com", EmailError::AtCount),
@@ -171,6 +182,11 @@ mod tests {
             ("local@symbole!.com", EmailError::InvalidDomain),
             ("local@-tiret.com", EmailError::InvalidDomain),
             ("es pace@example.com", EmailError::ForbiddenCharacter),
+            // Unicode refusé : homoglyphes = usurpation visuelle.
+            ("victime@ex\u{430}mple.com", EmailError::InvalidDomain), // а cyrillique
+            ("a@ex\u{663}mple.com", EmailError::InvalidDomain),       // chiffre arabe
+            ("\u{1f980}@example.com", EmailError::InvalidLocalPart),  // emoji
+            ("éric@example.com", EmailError::InvalidLocalPart),
         ];
         for (input, expected) in cases {
             assert_eq!(Email::parse(input), Err(expected), "entrée : {input:?}");

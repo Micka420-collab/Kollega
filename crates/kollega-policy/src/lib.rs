@@ -14,9 +14,10 @@
 //! - **Dépasser un maximum = refus**, pas une demande de validation : la
 //!   validation humaine est demandée par le drapeau `requires_approval` de la
 //!   règle, jamais déclenchée par une violation de limite.
-//! - **Fermé par défaut sur l'inconnu** : si une règle borne le montant ou
-//!   les destinataires et que l'appel ne déclare pas la valeur
-//!   correspondante, l'appel est refusé.
+//! - **Fermé par défaut sur l'inconnu** : si une règle borne le montant, les
+//!   destinataires ou les chemins et que l'appel ne déclare pas la valeur
+//!   correspondante, l'appel est refusé. Un chemin contenant `\` (séparateur
+//!   ambigu selon la cible) ou une traversée `..` est refusé d'office.
 //! - Toute issue porte une raison lisible par un humain, jamais vide :
 //!   c'est le futur `tool_calls.decision_reason`.
 
@@ -171,9 +172,25 @@ pub fn decide(rules: &[ToolRule], request: &ToolCallRequest) -> Evaluation {
     }
 
     // Chemins : chaque chemin touché doit être couvert par un préfixe
-    // autorisé. Les traversées (`..`) sont refusées avant toute comparaison.
+    // autorisé. Fermé par défaut sur l'inconnu, ici aussi : un outil
+    // restreint par chemins qui n'en déclare aucun est refusé — sinon un
+    // adaptateur qui omet la déclaration contournerait la restriction.
     if let Some(prefixes) = &rule.allowed_path_prefixes {
+        if request.paths.is_empty() {
+            return Evaluation::deny(format!(
+                "l'outil {tool} est restreint par chemins mais l'appel n'en déclare aucun"
+            ));
+        }
         for path in &request.paths {
+            // L'antislash est un séparateur réel sur certaines cibles
+            // (Windows, SharePoint) : un chemin qui en contient est ambigu
+            // et pourrait s'évader du dossier autorisé une fois interprété
+            // là-bas. Refus, comme « .. ».
+            if path.contains('\\') {
+                return Evaluation::deny(format!(
+                    "chemin refusé pour l'outil {tool} : séparateur « \\ » ambigu interdit, utiliser « / »"
+                ));
+            }
             if path.split('/').any(|segment| segment == "..") {
                 return Evaluation::deny(format!(
                     "chemin refusé pour l'outil {tool} : traversée « .. » interdite"
@@ -348,6 +365,31 @@ mod tests {
         let evaluation = decide(&[r], &req);
         assert_denied(&evaluation);
         assert!(evaluation.reason.contains(".."));
+    }
+
+    #[test]
+    fn backslash_traversal_is_denied() {
+        // « /data/..\..\secret » : aucun segment séparé par '/' ne vaut
+        // exactement « .. », mais sur une cible où '\' sépare, c'est une
+        // évasion. L'antislash est donc refusé d'office.
+        let mut r = rule("doc.write");
+        r.allowed_path_prefixes = Some(vec!["/data".to_owned()]);
+        let mut req = request("doc.write");
+        req.paths = vec!["/data/..\\..\\secret".to_owned()];
+        let evaluation = decide(&[r], &req);
+        assert_denied(&evaluation);
+        assert!(evaluation.reason.contains('\\'));
+    }
+
+    #[test]
+    fn undeclared_paths_with_restriction_are_denied() {
+        // Fermé sur l'inconnu, comme pour le montant : une règle qui
+        // restreint les chemins refuse un appel qui n'en déclare aucun.
+        let mut r = rule("doc.write");
+        r.allowed_path_prefixes = Some(vec!["/data".to_owned()]);
+        let evaluation = decide(&[r], &request("doc.write"));
+        assert_denied(&evaluation);
+        assert!(evaluation.reason.contains("aucun"));
     }
 
     #[test]

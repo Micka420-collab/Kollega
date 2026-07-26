@@ -32,7 +32,8 @@ fn obj(pairs: Vec<(&str, CanonicalValue)>) -> CanonicalValue {
 /// Vecteur 1 — le cas minimal, recoupé hors Rust.
 /// Enregistrement canonique attendu :
 /// `{"action":"task_started","actor":"system","org_id":"00000000-0000-0000-0000-000000000001","payload":{}}`
-/// Octets hachés : cet enregistrement suivi de `0` (horodatage), sans prev.
+/// Octets hachés : 32 octets à zéro (genèse), puis cet enregistrement, puis
+/// `0` (horodatage).
 fn vector_1() -> (OrgChain, EntryContent) {
     (
         org(1),
@@ -107,38 +108,38 @@ fn vector_5() -> (OrgChain, EntryContent) {
 
 #[test]
 fn reference_vectors_are_stable() {
-    // V1 recoupé indépendamment : SHA-256 (hors Rust) de
-    // `{"action":"task_started","actor":"system","org_id":"00000000-0000-0000-0000-000000000001","payload":{}}0`
+    // V1 recoupé indépendamment : SHA-256 (hors Rust) de 32 octets à zéro,
+    // puis `{"action":"task_started","actor":"system","org_id":"00000000-0000-0000-0000-000000000001","payload":{}}0`.
     let (c1, e1) = vector_1();
     assert_eq!(
         c1.entry_hash(None, &e1).to_hex(),
-        "f02cb462603e3ae02ad8654af85f57394529136b3367ec8662266baaccac2721"
+        "babb08aa2d5ad4c5ac04a9ca04c4689498b1a4b6720df16d82d7a95e2a54f63e"
     );
 
     let (c2, e2) = vector_2();
     assert_eq!(
         c2.entry_hash(None, &e2).to_hex(),
-        "e41eadba794894c3ba1b6c0be4f4bee7896e1212f9e3a507ab0948dacc274afe"
+        "af5f97ec9655dfcbbfdf53d42f4fa3fddef0746ef9f685758242685baf1d9566"
     );
 
     let (c3, e3) = vector_3();
     assert_eq!(
         c3.entry_hash(None, &e3).to_hex(),
-        "2a67f44a45b997a26200eff20dccb2552f8ce8ecf8a8a6c53080107ec8117728"
+        "9bb264f94f7ee8e8898cbd170831623fe39b971795b2902c0f6dfc845fd0c906"
     );
 
     let (c4, e4) = vector_4();
     let prev = c1.entry_hash(None, &e1);
     assert_eq!(
         c4.entry_hash(Some(&prev), &e4).to_hex(),
-        "68272d118acd40ba41ace148d8f510d23de886003c5ae89a1a3cc1f0cae54009"
+        "595779347b75ee24fa502b4bdd73f16ba2a239a2668ea64544ae5a165d20f03c"
     );
 
     let (c5, e5) = vector_5();
     let h5 = c5.entry_hash(None, &e5).to_hex();
     assert_eq!(
         h5,
-        "28893c8024860ca1e1b8015627dc75dfdd6700d4cb66fbcee84609691afdc406"
+        "7aa752b95a3d2ef45d368bcb3d9889a5ea664507cf727746eeb448f1922113ec"
     );
     assert_ne!(h5, c1.entry_hash(None, &e1).to_hex());
 }

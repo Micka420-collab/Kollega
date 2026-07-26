@@ -4,8 +4,9 @@
 //! - une arête interne hors du graphe `core → policy/audit/memory/tools/model
 //!   → runtime → store, api → cli` ;
 //! - une dépendance externe de `kollega-core` hors de la liste blanche, dans
-//!   N'IMPORTE QUELLE section (invariant 11 : notamment sqlx, reqwest ou
-//!   tokio dans le domaine, y compris en dev-dependencies).
+//!   N'IMPORTE QUELLE section — dependencies, dev-dependencies,
+//!   build-dependencies, y compris sous `[target.*]` (invariant 11 :
+//!   notamment sqlx, reqwest ou tokio dans le domaine).
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -81,12 +82,24 @@ fn crates_dir() -> PathBuf {
         .to_path_buf()
 }
 
+/// Noms de dépendances d'une section, EN INCLUANT les sections
+/// `[target.'cfg(...)'.<section>]` : une dépendance conditionnée par cible
+/// est une dépendance (et `cfg(all())` est vrai partout) — l'ignorer serait
+/// un contournement silencieux du garde-fou.
 fn dependency_names(manifest: &toml::Value, section: &str) -> BTreeSet<String> {
-    manifest
+    let mut out: BTreeSet<String> = manifest
         .get(section)
         .and_then(|d| d.as_table())
         .map(|t| t.keys().cloned().collect())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if let Some(targets) = manifest.get("target").and_then(|t| t.as_table()) {
+        for target_cfg in targets.values() {
+            if let Some(table) = target_cfg.get(section).and_then(|d| d.as_table()) {
+                out.extend(table.keys().cloned());
+            }
+        }
+    }
+    out
 }
 
 #[test]

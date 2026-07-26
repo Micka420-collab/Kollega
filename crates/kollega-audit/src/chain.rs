@@ -64,6 +64,10 @@ pub enum ChainBreakKind {
     /// L'empreinte stockée ne correspond pas au contenu recalculé
     /// (altération du contenu ou de l'horodatage).
     AlteredEntry,
+    /// L'empreinte de queue ne correspond pas à l'ancre de confiance
+    /// (troncature de queue, ou suffixe réécrit par un attaquant en
+    /// écriture). Émise uniquement par [`OrgChain::verify_with_tail`].
+    TailMismatch,
 }
 
 /// Première rupture détectée dans une chaîne : position et nature.
@@ -121,11 +125,16 @@ impl OrgChain {
 
     /// Empreinte d'une entrée pour CETTE organisation :
     /// `SHA-256(prev_hash || enregistrement_canonique || horodatage)`.
+    ///
+    /// Pour la première entrée (`prev_hash = None`), le préfixe est 32
+    /// octets à zéro : le préimage a toujours un préfixe de longueur fixe,
+    /// la séparation des champs est structurelle, pas computationnelle.
     #[must_use]
     pub fn entry_hash(&self, prev_hash: Option<&Hash32>, content: &EntryContent) -> Hash32 {
         let mut hasher = Sha256::new();
-        if let Some(prev) = prev_hash {
-            hasher.update(prev.0);
+        match prev_hash {
+            Some(prev) => hasher.update(prev.0),
+            None => hasher.update([0u8; 32]),
         }
         hasher.update(self.canonical_record(content).as_bytes());
         hasher.update(content.timestamp_micros.to_string().as_bytes());
@@ -144,11 +153,17 @@ impl OrgChain {
         }
     }
 
-    /// Vérifie l'intégralité d'une chaîne ; retourne la première rupture.
+    /// Vérifie la **cohérence interne** d'une chaîne ; première rupture.
     ///
     /// Une chaîne vide est valide. Pour chaque position : le lien d'abord
     /// (`prev_hash` doit égaler l'empreinte précédente — `None` en tête),
     /// puis l'empreinte (recalculée depuis le contenu et le lien stocké).
+    ///
+    /// LIMITE, assumée et documentée (voir le modèle de menace de la crate) :
+    /// une troncature de queue ou un suffixe entièrement réécrit par un
+    /// attaquant en écriture passent cette vérification. Contre ces deux
+    /// classes, utiliser [`OrgChain::verify_with_tail`] avec une ancre de
+    /// confiance externe.
     pub fn verify(&self, entries: &[ChainedEntry]) -> Result<(), ChainBreak> {
         let mut expected_prev: Option<Hash32> = None;
         for (position, entry) in entries.iter().enumerate() {
@@ -166,6 +181,31 @@ impl OrgChain {
                 });
             }
             expected_prev = Some(entry.hash);
+        }
+        Ok(())
+    }
+
+    /// Vérifie la chaîne ET son ancrage : l'empreinte de la dernière entrée
+    /// doit égaler `trusted_tail`, l'ancre de confiance conservée hors
+    /// d'atteinte d'un attaquant du stockage (`None` = la chaîne de
+    /// confiance est vide).
+    ///
+    /// C'est la seule vérification qui détecte la troncature de queue et la
+    /// réécriture complète d'un suffixe. En cas de désaccord, la rupture est
+    /// rapportée en position `entries.len()` (l'endroit où la suite attendue
+    /// manque), de nature [`ChainBreakKind::TailMismatch`].
+    pub fn verify_with_tail(
+        &self,
+        entries: &[ChainedEntry],
+        trusted_tail: Option<&Hash32>,
+    ) -> Result<(), ChainBreak> {
+        self.verify(entries)?;
+        let actual_tail = entries.last().map(|entry| entry.hash);
+        if actual_tail.as_ref() != trusted_tail {
+            return Err(ChainBreak {
+                position: entries.len(),
+                kind: ChainBreakKind::TailMismatch,
+            });
         }
         Ok(())
     }
@@ -322,5 +362,69 @@ mod tests {
         let h_genesis = chain.entry_hash(None, &c);
         let other = chain.entry_hash(Some(&h_genesis), &c);
         assert_ne!(h_genesis, other);
+    }
+
+    #[test]
+    fn tail_truncation_is_invisible_to_verify_but_caught_with_anchor() {
+        // LIMITE DOCUMENTÉE : une chaîne amputée de sa queue reste
+        // intérieurement cohérente — verify seul l'accepte. C'est
+        // l'ancre de confiance qui la détecte.
+        let chain = chain_a();
+        let entries = build(&chain, 6);
+        let anchor = entries.last().map(|e| e.hash);
+        let truncated = &entries[..4];
+        assert_eq!(chain.verify(truncated), Ok(()), "limite assumée de verify");
+        assert_eq!(
+            chain.verify_with_tail(truncated, anchor.as_ref()),
+            Err(ChainBreak {
+                position: 4,
+                kind: ChainBreakKind::TailMismatch,
+            })
+        );
+        // Avec la bonne ancre et la chaîne entière : valide.
+        assert_eq!(chain.verify_with_tail(&entries, anchor.as_ref()), Ok(()));
+    }
+
+    #[test]
+    fn full_suffix_rewrite_is_caught_by_anchor_only() {
+        // Un attaquant en écriture altère l'entrée 2 puis recalcule toutes
+        // les empreintes suivantes : la chaîne forgée est intérieurement
+        // cohérente. Seule l'ancre externe la trahit.
+        let chain = chain_a();
+        let entries = build(&chain, 5);
+        let anchor = entries.last().map(|e| e.hash);
+
+        let mut forged: Vec<ChainedEntry> = entries[..2].to_vec();
+        let mut altered = content(2);
+        altered.actor = "attaquant".to_owned();
+        let tail = forged.last().map(|e| e.hash);
+        forged.push(chain.append(tail.as_ref(), altered));
+        for i in 3..5 {
+            let tail = forged.last().map(|e| e.hash);
+            forged.push(chain.append(tail.as_ref(), content(i)));
+        }
+
+        assert_eq!(chain.verify(&forged), Ok(()), "limite assumée de verify");
+        assert_eq!(
+            chain.verify_with_tail(&forged, anchor.as_ref()),
+            Err(ChainBreak {
+                position: 5,
+                kind: ChainBreakKind::TailMismatch,
+            })
+        );
+    }
+
+    #[test]
+    fn verify_with_tail_on_empty_chain() {
+        let chain = chain_a();
+        assert_eq!(chain.verify_with_tail(&[], None), Ok(()));
+        let phantom = chain.entry_hash(None, &content(0));
+        assert_eq!(
+            chain.verify_with_tail(&[], Some(&phantom)),
+            Err(ChainBreak {
+                position: 0,
+                kind: ChainBreakKind::TailMismatch,
+            })
+        );
     }
 }
