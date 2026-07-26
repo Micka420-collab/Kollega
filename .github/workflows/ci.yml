@@ -1,5 +1,11 @@
-# Intégration continue : fmt → clippy → tests (dont graphe de dépendances)
-# → image → SBOM → signature cosign → publication.
+# NON VÉRIFIÉ — ce pipeline n'a jamais été exécuté (aucun dépôt distant,
+# aucun runner) ; sa première exécution réelle validera : le test
+# d'isolation RLS, le filet structurel RLS, le build d'image, le SBOM et la
+# signature cosign.
+#
+# Intégration continue : fmt → clippy → tests (dont graphe de dépendances,
+# isolation RLS et filet structurel sur base réelle) → image → SBOM →
+# signature cosign → publication.
 name: ci
 
 on:
