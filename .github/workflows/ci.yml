@@ -10,6 +10,25 @@ on:
 jobs:
   verifications:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector inclus : la migration 0001 crée l'extension.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: kollega
+          POSTGRES_USER: kollega_migrate
+          # Mot de passe jetable d'un conteneur éphémère de CI — pas un secret.
+          POSTGRES_PASSWORD: ci_migrate
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U kollega_migrate -d kollega"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Active le test d'isolation RLS (invariant 1) sur une base réelle.
+      TEST_MIGRATE_DATABASE_URL: postgres://kollega_migrate:ci_migrate@localhost:5432/kollega
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -19,7 +38,7 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Tests (inclut la vérification du graphe de dépendances)
+      - name: Tests (graphe de dépendances + isolation RLS sur base réelle)
         run: cargo test --workspace
 
   image:

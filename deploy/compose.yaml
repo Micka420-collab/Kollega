@@ -1,17 +1,20 @@
-# Démarrage local / client : podman compose --file deploy/compose.yaml up
-# Prérequis : définir KOLLEGA_DB_PASSWORD dans l'environnement (jamais dans ce fichier).
-# Première mise en route : podman compose run --rm app migrate
+# Démarrage local : podman compose --file deploy/compose.yaml up
+# Prérequis : définir dans l'environnement (jamais dans ce fichier) :
+#   KOLLEGA_MIGRATE_DB_PASSWORD  — mot de passe du rôle kollega_migrate
+#   KOLLEGA_APP_DB_PASSWORD      — mot de passe du rôle kollega_app
+# Première mise en route : podman compose --file deploy/compose.yaml run --rm app migrate
+# (applique les migrations avec kollega_migrate, puis pose le mot de passe de kollega_app)
 services:
   db:
     image: docker.io/pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: kollega
-      POSTGRES_USER: kollega
-      POSTGRES_PASSWORD: ${KOLLEGA_DB_PASSWORD:?definir KOLLEGA_DB_PASSWORD}
+      POSTGRES_USER: kollega_migrate
+      POSTGRES_PASSWORD: ${KOLLEGA_MIGRATE_DB_PASSWORD:?definir KOLLEGA_MIGRATE_DB_PASSWORD}
     volumes:
       - kollega-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kollega -d kollega"]
+      test: ["CMD-SHELL", "pg_isready -U kollega_migrate -d kollega"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -22,7 +25,11 @@ services:
       dockerfile: deploy/Containerfile
     image: localhost/kollega:dev
     environment:
-      DATABASE_URL: postgres://kollega:${KOLLEGA_DB_PASSWORD:?definir KOLLEGA_DB_PASSWORD}@db:5432/kollega
+      # L'application ne se connecte QU'AVEC kollega_app (sans BYPASSRLS).
+      DATABASE_URL: postgres://kollega_app:${KOLLEGA_APP_DB_PASSWORD:?definir KOLLEGA_APP_DB_PASSWORD}@db:5432/kollega
+      # Utilisés uniquement par `kollega migrate`.
+      KOLLEGA_MIGRATE_DATABASE_URL: postgres://kollega_migrate:${KOLLEGA_MIGRATE_DB_PASSWORD:?definir KOLLEGA_MIGRATE_DB_PASSWORD}@db:5432/kollega
+      KOLLEGA_APP_DB_PASSWORD: ${KOLLEGA_APP_DB_PASSWORD:?definir KOLLEGA_APP_DB_PASSWORD}
       KOLLEGA_LISTEN: 0.0.0.0:8080
     depends_on:
       db:
