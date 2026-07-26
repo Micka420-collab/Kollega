@@ -9,10 +9,10 @@ Remote : absent → commits locaux.
 |---|---|---|---|
 | 0 — Reprise | terminé | — | Premier passage du prompt permanent ; fichier créé |
 | 1 — Prouver M0 | abandonné (pas de base) | 0 | Reste LE jalon non prouvé ; exige PostgreSQL ou remote+CI |
-| 2 — Retirer l'épinglage argon2 | non commencé | 0 | |
-| 3 — Limite dure / seuil souple | non commencé | 0 | |
-| 4 — Numéro de séquence haché | non commencé | 0 | |
-| 5 — Ancre de chaîne, pur | non commencé | 0 | |
+| 2 — Retirer l'épinglage argon2 | terminé | 1 | ADR-0006 ; bornes plancher/plafond, ValidNeedsRehash ; tour 1 : mauvais mdp sur profil ancien → Invalid (pas Rehash), refus m=4Gio chronométré sans allocation |
+| 3 — Limite dure / seuil souple | terminé | 1 | Bound{max, on_exceed} explicite ; tour 1 : combinaisons dur+souple (le dur gagne), fusion des raisons souples, violations de protocole insensibles au mode |
+| 4 — Numéro de séquence haché | terminé | 1 | Format v3, spec docs/encodage-canonique.md créée ; vecteurs régénérés, V1 recoupé hors Rust ; tour 1 : déplacement avec hauteur conservée ET réécrite, les deux détectés |
+| 5 — Ancre de chaîne, pur | terminé | 1 | verify_with_anchor + AnchorPublisher monotone + modèle de menace ; tour 1 : test de la fenêtre d'ancrage (limite démontrée, pas cachée) |
 | 6 — Assemblage des segments (inv. 7) | non commencé | 0 | |
 | 7 — Injectivité de l'encodeur | non commencé | 0 | Python absent : différentiel non exécutable |
 | 8 — Propriétés surface pure | non commencé | 0 | |
