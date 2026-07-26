@@ -102,13 +102,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Aller-retour complet des migrations (up → down → up)
         run: |
+          set -x
+          psql --version && psql -Atc "SELECT version()"
           snapshot() {
             pg_dump --schema-only --no-owner --no-privileges > "$1.schema"
             # pg_dump ne couvre ni les rôles, ni les extensions, ni les
             # privilèges de schéma : capturés à part.
             psql -Atc "SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE 'kollega%' ORDER BY rolname" > "$1.roles"
             psql -Atc "SELECT extname FROM pg_extension ORDER BY extname" > "$1.ext"
-            psql -Atc "SELECT COALESCE(nspacl::text, '') FROM pg_namespace WHERE nspname = 'public'" > "$1.acl"
+            # ACL EFFECTIVE, pas texte brut : un nspacl encore NULL (jamais
+            # touché) et un nspacl matérialisé aux entrées par défaut sont
+            # LE MÊME état de droits — le premier GRANT matérialise les
+            # entrées implicites et un REVOKE ne rend jamais le NULL.
+            psql -Atc "SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) a WHERE n.nspname = 'public' ORDER BY 1, 2" > "$1.acl"
           }
           apply()  { for f in migrations/*.up.sql;            do psql -v ON_ERROR_STOP=1 -f "$f"; done; }
           revert() { for f in $(ls -r migrations/*.down.sql); do psql -v ON_ERROR_STOP=1 -f "$f"; done; }
