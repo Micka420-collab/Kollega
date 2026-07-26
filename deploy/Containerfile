@@ -1,0 +1,17 @@
+# Étape de compilation
+FROM docker.io/library/rust:1-bookworm AS build
+WORKDIR /src
+COPY . .
+RUN cargo build --release --locked -p kollega-cli
+
+# Image finale minimale
+FROM docker.io/library/debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/target/release/kollega /usr/local/bin/kollega
+# Utilisateur non privilégié
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/kollega"]
+CMD ["serve", "--listen", "0.0.0.0:8080"]

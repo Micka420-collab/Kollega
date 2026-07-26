@@ -1,0 +1,58 @@
+# Intégration continue : fmt → clippy → tests (dont graphe de dépendances)
+# → image → SBOM → signature cosign → publication.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verifications:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests (inclut la vérification du graphe de dépendances)
+        run: cargo test --workspace
+
+  image:
+    needs: verifications
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # signature cosign sans clé (OIDC)
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/kollega
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construire l'image
+        run: podman build -f deploy/Containerfile -t "$IMAGE:${{ github.sha }}" .
+      - name: Connexion au registre
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Publier
+        run: podman push "$IMAGE:${{ github.sha }}"
+      - name: SBOM (syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Installer cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Signer l'image (sans clé, OIDC)
+        run: cosign sign --yes "$IMAGE:${{ github.sha }}"
+      - name: Attester le SBOM
+        run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE:${{ github.sha }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
