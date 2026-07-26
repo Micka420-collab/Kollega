@@ -5,5 +5,7 @@ edition.workspace = true
 description = "HTTP + SSE, rendu serveur"
 
 [dependencies]
+argon2.workspace = true
 axum.workspace = true
 kollega-store = { path = "../kollega-store" }
+thiserror.workspace = true

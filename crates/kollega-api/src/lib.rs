@@ -5,6 +5,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod auth;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::get;
