@@ -13,10 +13,12 @@ Remote : absent → commits locaux.
 | 3 — Limite dure / seuil souple | terminé | 1 | Bound{max, on_exceed} explicite ; tour 1 : combinaisons dur+souple (le dur gagne), fusion des raisons souples, violations de protocole insensibles au mode |
 | 4 — Numéro de séquence haché | terminé | 1 | Format v3, spec docs/encodage-canonique.md créée ; vecteurs régénérés, V1 recoupé hors Rust ; tour 1 : déplacement avec hauteur conservée ET réécrite, les deux détectés |
 | 5 — Ancre de chaîne, pur | terminé | 1 | verify_with_anchor + AnchorPublisher monotone + modèle de menace ; tour 1 : test de la fenêtre d'ancrage (limite démontrée, pas cachée) |
-| 6 — Assemblage des segments (inv. 7) | non commencé | 0 | |
-| 7 — Injectivité de l'encodeur | non commencé | 0 | Python absent : différentiel non exécutable |
+| 6 — Assemblage des segments (inv. 7) | terminé | 1 | compile() structuré + corpus 35 cas + modèle de menace ; tour 1 : très long tronqué, sérialisation garde l'origine |
+| 7 — Injectivité de l'encodeur | terminé | 1 | round-trip proptest 4000 cas + chasse séparateur, aucune collision ; réf Python NON VÉRIFIÉE (absent) ; tour 1 : clé avec guillemet+virgule, antislash avant guillemet |
+| 13 — Corrections CLAUDE.md | terminé | 0 | 4 corrections proposées, fichier non touché |
 | 8 — Propriétés surface pure | non commencé | 0 | |
-| 9 — Plafond et crédit, noyau pur | non commencé | 0 | |
+| 9 — Plafond et crédit, noyau pur | terminé | 1 | Budget::charge + proptest conservation ; tour 1 : débordement i64 → plafond (pas erreur), refus avant facturation ; docs/credits-concurrence.md |
+| 8 — Propriétés surface pure | terminé | 1 | proptest core/audit/policy ; tour 1 : le garde-fou a attrapé proptest en dev-dep de core (ajouté à la liste blanche, décision consignée) |
 | 10 — Boucle d'agent, machine à états | non commencé | 0 | Seulement si 2-9 approfondis |
 | 11 — Matrice invariant → test | non commencé | 0 | |
 | 12 — Méthode de travail (document) | non commencé | 0 | |
