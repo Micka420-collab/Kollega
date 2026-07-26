@@ -19,6 +19,7 @@
 //! arrête.
 
 use kollega_core::Cents;
+use serde::{Deserialize, Serialize};
 
 /// Décision comptable pour un appel de coût donné.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +51,10 @@ pub enum BudgetError {
 
 /// État de budget d'une tâche : ce qui est consommé, le plafond de tâche,
 /// le solde prépayé de l'organisation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Entièrement sérialisable : c'est ce qui rend une tâche reprise-compatible
+/// (rien en mémoire, tout reconstructible depuis l'état persistant).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Budget {
     ceiling: Cents,
     consumed: Cents,

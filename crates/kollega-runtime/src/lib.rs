@@ -7,8 +7,13 @@
 #![forbid(unsafe_code)]
 
 pub mod budget;
+pub mod machine;
 
 pub use budget::{Budget, BudgetError, SpendDecision};
+pub use machine::{
+    drive, ApprovalDecision, AuditEvent, ModelProvider, PlannedAction, PolicyEngine, TaskState,
+    ToolRunner,
+};
 
 #[cfg(test)]
 mod tests {

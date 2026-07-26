@@ -6,7 +6,9 @@ description = "La boucle d'agent — noyau pur"
 
 [dependencies]
 kollega-core = { path = "../kollega-core" }
+serde = { workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]
 proptest = "1"
+serde_json.workspace = true
