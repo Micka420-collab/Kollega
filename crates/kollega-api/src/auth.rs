@@ -24,6 +24,8 @@
 //! ces fonctions — ni dans les erreurs, ni dans les journaux. Les erreurs
 //! amont d'argon2 sont volontairement écrasées en variantes muettes.
 
+use std::sync::{Condvar, Mutex};
+
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -57,6 +59,8 @@ fn hasher() -> Result<Argon2<'static>, PasswordError> {
 /// Retourne la chaîne PHC complète à stocker. Deux appels avec le même mot
 /// de passe produisent deux chaînes différentes (sel aléatoire).
 pub fn hash_password(password: &str) -> Result<String, PasswordError> {
+    // Un hachage alloue la même mémoire qu'une vérification : même borne.
+    let _permit = GATE.acquire();
     let salt = SaltString::generate(&mut OsRng);
     let hash = hasher()?
         .hash_password(password.as_bytes(), &salt)
@@ -77,9 +81,84 @@ pub fn hash_password(password: &str) -> Result<String, PasswordError> {
 ///   allouer 4 Gio à chaque tentative de connexion) — seul argument valable
 ///   pour contraindre les paramètres d'une chaîne stockée.
 const MIN_MEMORY_KIB: u32 = 8_192; // 8 Mio : en dessous, c'est cassé.
-const MAX_MEMORY_KIB: u32 = 262_144; // 256 Mio : au-delà, primitive de DoS.
+/// 64 Mio (amendement ADR-0006 du 28/07) : défend contre une empreinte
+/// stockée EMPOISONNÉE — ~3,4× le profil courant, marge de durcissement
+/// réelle sans laisser à une chaîne forgée de quoi coûter cher. Le plafond
+/// seul ne défend PAS contre le VOLUME (deux cents tentatives simultanées à
+/// 19 Mio conformes font ~3,8 Gio) : c'est le rôle du sémaphore [`GATE`].
+/// Les deux, pas l'un ou l'autre.
+const MAX_MEMORY_KIB: u32 = 65_536;
 const MAX_ITERATIONS: u32 = 64; // garde CPU, même logique que la mémoire.
 const MAX_PARALLELISM: u32 = 16;
+
+/// Nombre maximal d'opérations argon2 SIMULTANÉES (hachage + vérification).
+///
+/// Lien avec la mémoire disponible, documenté (amendement ADR-0006) : pire
+/// cas légitime = 4 × 64 Mio (chaînes stockées au plafond) = 256 Mio ; cas
+/// courant = 4 × 19 Mio ≈ 76 Mio — dimensionné pour le « serveur mutualisé
+/// modeste » du profil de tête de module, où l'empreinte mémoire totale
+/// doit rester sous quelques centaines de Mio. Au-delà de la borne, les
+/// appels ATTENDENT leur tour, ils n'échouent pas : une pointe de
+/// connexions légitimes se sérialise (quelques dizaines de ms chacune), un
+/// déluge hostile ne fait plus tomber le serveur — et la file borne le
+/// débit de force brute au passage.
+const MAX_CONCURRENT_ARGON2: u32 = 4;
+
+/// Sémaphore compteur minimal (Mutex + Condvar), sans dépendance ni async :
+/// la borne vit au plus près des fonctions qu'elle protège.
+struct Gate {
+    available: Mutex<u32>,
+    freed: Condvar,
+}
+
+/// Permis pris sur [`Gate`] — rendu automatiquement, même en cas de panique
+/// pendant l'opération protégée (le `Drop` s'exécute au déroulement).
+struct GatePermit<'a> {
+    gate: &'a Gate,
+}
+
+impl Gate {
+    const fn new(permits: u32) -> Self {
+        Gate {
+            available: Mutex::new(permits),
+            freed: Condvar::new(),
+        }
+    }
+
+    /// Attend qu'un permis soit libre, puis le prend. Bloquant, jamais une
+    /// erreur : c'est le contrat (« les vérifications attendent, elles
+    /// n'échouent pas »). Un mutex empoisonné est récupéré tel quel — le
+    /// compteur reste cohérent, le `Drop` du permis ayant rendu le sien
+    /// pendant le déroulement de la panique.
+    fn acquire(&self) -> GatePermit<'_> {
+        let mut available = self
+            .available
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        while *available == 0 {
+            available = self
+                .freed
+                .wait(available)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+        *available -= 1;
+        GatePermit { gate: self }
+    }
+}
+
+impl Drop for GatePermit<'_> {
+    fn drop(&mut self) {
+        let mut available = self
+            .gate
+            .available
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *available += 1;
+        self.gate.freed.notify_one();
+    }
+}
+
+static GATE: Gate = Gate::new(MAX_CONCURRENT_ARGON2);
 
 /// Issue d'une vérification de mot de passe réussie à parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,6 +209,10 @@ pub fn check_password(password: &str, stored_hash: &str) -> Result<PasswordCheck
     {
         return Err(PasswordError::InvalidStoredHash);
     }
+    // Le permis n'est pris qu'ICI, après les bornes : une chaîne forgée
+    // absurde est refusée sans consommer de place dans la file — seul le
+    // travail mémoire/CPU réel est contingenté.
+    let _permit = GATE.acquire();
     match hasher()?.verify_password(password.as_bytes(), &parsed) {
         Ok(()) => {
             let current = (MEMORY_KIB, ITERATIONS, PARALLELISM);
@@ -251,6 +334,105 @@ mod tests {
             check_password("x", &phc),
             Err(PasswordError::InvalidStoredHash)
         );
+    }
+
+    #[test]
+    fn ceiling_is_64_mib_exactly() {
+        // À la borne exacte (64 Mio) : accepté — et signalé pour re-hachage
+        // puisque ce n'est pas le profil courant.
+        let at_max = phc_with(Algorithm::Argon2id, MAX_MEMORY_KIB, 1, 1, "x");
+        assert_eq!(
+            check_password("x", &at_max),
+            Ok(PasswordCheck::ValidNeedsRehash)
+        );
+        // 128 Mio : légal sous l'ancien plafond (256 Mio), refusé depuis
+        // l'amendement ADR-0006 — une empreinte stockée empoisonnée ne peut
+        // plus coûter que 64 Mio par tentative.
+        let stored = hash_password("x").unwrap();
+        let forged = stored.replace("m=19456", "m=131072");
+        assert!(forged.contains("m=131072"));
+        assert_eq!(
+            check_password("x", &forged),
+            Err(PasswordError::InvalidStoredHash)
+        );
+    }
+
+    #[test]
+    fn beyond_the_gate_verifications_wait_they_do_not_fail() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        // Tous les permis sont pris à la main : la vérification suivante
+        // doit ATTENDRE (pas d'erreur, pas de refus), puis aboutir dès
+        // qu'un permis se libère.
+        //
+        // Le profil est VOLONTAIREMENT rapide (plancher, t=1 : quelques ms)
+        // pour que seul le blocage de la porte puisse expliquer l'attente —
+        // avec le profil courant (~centaines de ms sur une machine chargée),
+        // ce test passait AUSSI avec une porte cassée : la lenteur d'argon2
+        // masquait l'absence de blocage. Attrapé par sabotage volontaire.
+        let stored = phc_with(
+            Algorithm::Argon2id,
+            MIN_MEMORY_KIB,
+            1,
+            1,
+            "attente disciplinée",
+        );
+        let permits: Vec<_> = (0..MAX_CONCURRENT_ARGON2).map(|_| GATE.acquire()).collect();
+
+        let (sender, receiver) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let result = check_password("attente disciplinée", &stored);
+            sender.send(()).expect("canal de test");
+            result
+        });
+
+        // Porte saturée : la vérification (quelques ms une fois libérée) ne
+        // doit PAS aboutir pendant une attente de 500 ms.
+        assert!(
+            receiver.recv_timeout(Duration::from_millis(500)).is_err(),
+            "la vérification aurait dû attendre, la porte étant saturée"
+        );
+
+        drop(permits);
+        // Porte libérée : elle aboutit, correctement, sans erreur.
+        assert!(
+            receiver.recv_timeout(Duration::from_secs(10)).is_ok(),
+            "la vérification aurait dû aboutir après libération"
+        );
+        assert_eq!(
+            handle.join().expect("jointure du fil de test"),
+            Ok(PasswordCheck::ValidNeedsRehash)
+        );
+    }
+
+    #[test]
+    fn saturation_never_turns_into_failure() {
+        // 3× la borne en parallèle : tout le monde finit, tout le monde a
+        // la bonne réponse — la contention se paie en attente, jamais en
+        // erreur ni en faux « invalide ».
+        let stored = hash_password("charge de pointe").unwrap();
+        let handles: Vec<_> = (0..MAX_CONCURRENT_ARGON2 * 3)
+            .map(|i| {
+                let stored = stored.clone();
+                std::thread::spawn(move || {
+                    if i % 2 == 0 {
+                        (check_password("charge de pointe", &stored), true)
+                    } else {
+                        (check_password("mauvais mot de passe", &stored), false)
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            let (result, expected_valid) = handle.join().expect("jointure");
+            let expected = if expected_valid {
+                PasswordCheck::Valid
+            } else {
+                PasswordCheck::Invalid
+            };
+            assert_eq!(result, Ok(expected));
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # ADR-0006 — Vérification des mots de passe : paramètres stockés, bornés, avec re-hachage
 
-**Statut :** Acceptée (session autonome du 28/07/2026)
+**Statut :** Acceptée (session autonome du 28/07/2026), **amendée le 28/07/2026** (voir Amendement)
 **Date :** 28 juillet 2026
 **Corrige :** l'épinglage par liste blanche introduit la nuit du 27/07
 
@@ -63,3 +63,34 @@ C'était un défaut, pas une protection :
 | Liste blanche stricte de profils (état du 27/07) | Ne ferme aucun chemin réel ; verrouille le parc au premier durcissement oublié |
 | Aucune borne (paramètres stockés bruts) | Laisse la primitive de déni de service mémoire/CPU par chaîne forgée |
 | Re-hachage par tâche de fond | Exige le mot de passe en clair, qu'on n'a qu'à la connexion — impossible par construction |
+
+---
+
+## Amendement du 28/07/2026 — plafond abaissé ET sémaphore (revue externe, bloc 3)
+
+Le plafond initial (256 Mio) était trop haut, et surtout il ne défendait
+pas contre la vraie attaque : une tentative à 256 Mio passait, mais **deux
+cents tentatives simultanées à 19 Mio parfaitement conformes font
+~3,8 Gio** et le serveur tombe. Le plafond par opération ne dit rien du
+volume. Deux mesures, cumulatives — l'une sans l'autre ne suffit pas :
+
+1. **Plafond abaissé à 64 Mio** (`MAX_MEMORY_KIB = 65 536`). Défend contre
+   une empreinte stockée **empoisonnée** : ~3,4× le profil courant
+   (19 Mio), assez pour durcir la politique plusieurs fois sans re-toucher
+   la borne, plus rien pour faire coûter cher une chaîne forgée. Testé aux
+   deux bords : 64 Mio exact accepté (et signalé pour re-hachage),
+   128 Mio — légal sous l'ancien plafond — refusé.
+2. **Sémaphore sur les opérations argon2 concurrentes**
+   (`MAX_CONCURRENT_ARGON2 = 4`, hachage et vérification). Défend contre le
+   **volume**. Dimensionnement documenté dans le code : pire cas légitime
+   4 × 64 Mio = 256 Mio, cas courant 4 × 19 Mio ≈ 76 Mio — compatible avec
+   le serveur mutualisé modeste du profil. Contrat : au-delà de la borne,
+   les appels **attendent, ils n'échouent pas** — testé (porte saturée à la
+   main : la vérification patiente puis aboutit ; 3× la borne en parallèle :
+   aucune erreur, aucune fausse réponse). Le permis n'est pris qu'après le
+   contrôle des bornes : une chaîne forgée absurde est refusée sans
+   consommer de place dans la file.
+
+Conséquence pour M1 : le gestionnaire HTTP appellera ces fonctions dans un
+`spawn_blocking` (elles bloquent, par contrat) ; la borne vivra alors côté
+travail bloquant, pas dans l'exécuteur async.
