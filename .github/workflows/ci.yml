@@ -101,36 +101,65 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Aller-retour complet des migrations (up → down → up)
+        # Tout échec est publié dans le RÉSUMÉ du job (page publique de la
+        # run) : les journaux bruts exigent un jeton, le résumé non.
         run: |
-          set -x
-          psql --version && psql -Atc "SELECT version()"
+          summary() { printf '%s\n' "$*" >> "$GITHUB_STEP_SUMMARY"; }
+          capture() {
+            local label="$1"; shift
+            if ! "$@" > step-out.txt 2>&1; then
+              summary "### ÉCHEC — $label"
+              summary '```'
+              tail -c 4000 step-out.txt >> "$GITHUB_STEP_SUMMARY"
+              summary '```'
+              exit 1
+            fi
+          }
           snapshot() {
-            pg_dump --schema-only --no-owner --no-privileges > "$1.schema"
+            capture "pg_dump ($1)" pg_dump --schema-only --no-owner --no-privileges -f "$1.schema"
             # pg_dump ne couvre ni les rôles, ni les extensions, ni les
             # privilèges de schéma : capturés à part.
-            psql -Atc "SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE 'kollega%' ORDER BY rolname" > "$1.roles"
-            psql -Atc "SELECT extname FROM pg_extension ORDER BY extname" > "$1.ext"
-            # ACL EFFECTIVE, pas texte brut : un nspacl encore NULL (jamais
-            # touché) et un nspacl matérialisé aux entrées par défaut sont
-            # LE MÊME état de droits — le premier GRANT matérialise les
-            # entrées implicites et un REVOKE ne rend jamais le NULL.
-            psql -Atc "SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) a WHERE n.nspname = 'public' ORDER BY 1, 2" > "$1.acl"
+            capture "roles ($1)" psql -Atc "SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE 'kollega%' ORDER BY rolname" -o "$1.roles"
+            capture "extensions ($1)" psql -Atc "SELECT extname FROM pg_extension ORDER BY extname" -o "$1.ext"
+            # ACL EFFECTIVE, pas texte brut : nspacl NULL (jamais touché) et
+            # nspacl matérialisé aux entrées par défaut sont le même état.
+            capture "acl ($1)" psql -Atc "SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) a WHERE n.nspname = 'public' ORDER BY 1, 2" -o "$1.acl"
           }
-          apply()  { for f in migrations/*.up.sql;            do psql -v ON_ERROR_STOP=1 -f "$f"; done; }
-          revert() { for f in $(ls -r migrations/*.down.sql); do psql -v ON_ERROR_STOP=1 -f "$f"; done; }
+          apply()  { for f in migrations/*.up.sql;            do capture "up: $f"   psql -v ON_ERROR_STOP=1 -f "$f"; done; }
+          revert() { for f in $(ls -r migrations/*.down.sql); do capture "down: $f" psql -v ON_ERROR_STOP=1 -f "$f"; done; }
 
+          summary "## Réversibilité des migrations — $(psql --version)"
+          capture "version serveur" psql -Atc "SELECT version()" -o server-version.txt
+          summary "serveur : $(cat server-version.txt)"
           snapshot vierge
           apply
           snapshot apres-up-1
           revert
           snapshot apres-down
-          echo "— le retour arrière doit rendre l'état vierge —"
-          for part in schema roles ext acl; do diff "vierge.$part" "apres-down.$part"; done
-          echo "— la ré-application doit reproduire le même état —"
+          fail=0
+          for part in schema roles ext acl; do
+            if ! diff "vierge.$part" "apres-down.$part" > delta.txt; then
+              fail=1
+              summary "### DIVERGENCE down↩vierge ($part)"
+              summary '```'
+              head -c 4000 delta.txt >> "$GITHUB_STEP_SUMMARY"
+              summary '```'
+            fi
+          done
           apply
           snapshot apres-up-2
-          for part in schema roles ext acl; do diff "apres-up-1.$part" "apres-up-2.$part"; done
-          echo "réversibilité prouvée : down rend le vierge, re-up reproduit l'état"
+          for part in schema roles ext acl; do
+            if ! diff "apres-up-1.$part" "apres-up-2.$part" > delta.txt; then
+              fail=1
+              summary "### DIVERGENCE re-up ($part)"
+              summary '```'
+              head -c 4000 delta.txt >> "$GITHUB_STEP_SUMMARY"
+              summary '```'
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          summary "réversibilité prouvée : down rend le vierge, re-up reproduit l'état"
+          echo "réversibilité prouvée"
 
   image:
     needs: verifications
