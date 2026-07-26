@@ -1,5 +1,35 @@
 # Questions des sessions autonomes
 
+## Session du 28/07/2026 — reprise de jour (remote actif, CI opérationnelle)
+
+Choix réversibles pris seul :
+
+1. **Document « tâches délégables » versé au dépôt.** Le document fourni en
+   cours de session est enregistré verbatim dans
+   `docs/taches-delegables-analyse.md` (tableau remis en forme markdown —
+   le collage l'avait aplati — et dernier mot tronqué complété :
+   « commencé »). `docs/` étant versionné, il est désormais sauvegardé sur
+   le remote, contrairement à `doc/` qui reste hors git.
+2. **Recommandation M4 du document (« comptes rendus » → « relance
+   client ») : NON appliquée.** C'est une décision produit qui modifie
+   `docs/jalons.md` ; notée au backlog, à trancher par toi. Ses quatre
+   questions d'entretien seront intégrées à `docs/methode-de-travail.md`
+   au bloc 7 (le document dit explicitement « à ajouter »).
+3. **Canal expert-comptable.** Le document signale que ce choix (passer par
+   lui ou aller au dirigeant) « a plus d'impact que la plupart des
+   décisions techniques » et n'est tranché nulle part. Aucun bloc de la
+   nuit ne le couvre : décision commerciale qui t'appartient.
+4. **`serde_json` ajouté aux dev-dependencies de `kollega-audit`** pour le
+   harnais différentiel (émission de la forme JSON de transport). Même
+   statut que le précédent consigné (pur, sans E/S, déjà dans le
+   workspace). Réversible.
+5. **Bug corrigé dans `canonical.py` avant première exécution** : le bloc
+   `__main__` précédait la définition de `_from_json` (NameError garanti
+   en mode script). Déplacé en fin de fichier, fonctions d'encodage et de
+   hachage inchangées octet pour octet — ce n'est PAS une divergence de
+   spécification, c'est un défaut d'ordre de définition. Un mode
+   `--hashes` a été ajouté pour le différentiel d'empreintes complètes.
+
 ## Session du 28/07/2026 (choix réversibles pris seul)
 
 1. **ADR-0006 — vérification des mots de passe.** Remplacement de la liste
