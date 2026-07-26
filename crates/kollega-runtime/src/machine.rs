@@ -11,10 +11,11 @@
 //! attente de validation peut être sérialisée, le processus redémarrer,
 //! l'état relu, et la tâche reprendre au même point avec le même résultat.
 //!
-//! Invariants portés ici :
-//! - **1** : tout appel d'outil passe par [`PolicyEngine::decide`] — il n'y a
+//! Invariants portés ici (numérotation de CLAUDE.md — l'invariant 1 est la
+//! RLS, hors de cette crate) :
+//! - **2** : tout appel d'outil passe par [`PolicyEngine::decide`] — il n'y a
 //!   aucune branche d'exécution d'outil qui ne soit précédée d'une décision.
-//! - **2** : tout appel d'outil produit `ToolCallIntended` AVANT et
+//! - **3** : tout appel d'outil produit `ToolCallIntended` AVANT et
 //!   `ToolCallCompleted` APRÈS ; une tâche interrompue garde donc la trace de
 //!   son intention (l'`Intended` sans `Completed`).
 //! - **6** (et 5) : le plafond de coût et le crédit sont vérifiés après
@@ -62,7 +63,7 @@ pub trait ModelProvider {
     fn plan(&self, iteration: u32) -> PlannedAction;
 }
 
-/// Décide de l'autorisation d'un appel d'outil (invariant 1).
+/// Décide de l'autorisation d'un appel d'outil (invariant 2 de CLAUDE.md).
 pub trait PolicyEngine {
     /// Décision pour l'outil nommé.
     fn decide(&self, tool: &str) -> Decision;
@@ -74,7 +75,7 @@ pub trait ToolRunner {
     fn run(&self, tool: &str) -> String;
 }
 
-/// Événement d'audit émis par la boucle (invariant 2).
+/// Événement d'audit émis par la boucle (invariant 3 de CLAUDE.md).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuditEvent {
     /// Début de tâche.
@@ -295,10 +296,19 @@ pub fn drive(
         let Some(decision) = approval else {
             return; // toujours suspendu, rien à appliquer
         };
-        let pending = state
-            .pending
-            .take()
-            .expect("un état WaitingApproval porte toujours un pending");
+        // Un WaitingApproval sans pending est un état incohérent — mais il
+        // est REPRÉSENTABLE (champs publics, état relu depuis une enveloppe
+        // persistée) : échec propre de la tâche, jamais une panique du
+        // worker (convention du dépôt : pas d'expect hors tests).
+        let Some(pending) = state.pending.take() else {
+            state.audit.push(AuditEvent::ToolCallDenied {
+                tool: "?".to_owned(),
+                reason: "état incohérent : suspension sans appel en attente — tâche close en échec"
+                    .to_owned(),
+            });
+            finish(state, TaskStatus::Failed);
+            return;
+        };
         state.audit.push(AuditEvent::ApprovalResolved { decision });
         match decision {
             ApprovalDecision::Reject => {
@@ -347,11 +357,11 @@ pub fn drive(
                 model_cost,
                 tool_cost,
             } => {
-                // Invariant 2 : intention AVANT toute exécution.
+                // Invariant 3 : intention AVANT toute exécution.
                 state
                     .audit
                     .push(AuditEvent::ToolCallIntended { tool: tool.clone() });
-                // Invariant 1 : passage obligatoire par la politique.
+                // Invariant 2 : passage obligatoire par la politique.
                 match policy.decide(&tool) {
                     Decision::Deny { reason } => {
                         state.audit.push(AuditEvent::ToolCallDenied {
@@ -377,7 +387,7 @@ pub fn drive(
                         let total = model_cost.saturating_add(tool_cost);
                         if !charge_or_stop(state, total) {
                             // L'intention reste au journal, sans complétion :
-                            // trace d'une tâche interrompue (invariant 2).
+                            // trace d'une tâche interrompue (invariant 3).
                             finish(state, state.status);
                             return;
                         }
@@ -483,7 +493,7 @@ mod tests {
         assert_eq!(state.status, TaskStatus::Succeeded);
         assert_eq!(state.conclusion.as_deref(), Some("trié"));
         assert_eq!(state.budget.consumed(), Cents(35));
-        // Invariant 2 : l'appel exécuté a bien deux entrées.
+        // Invariant 3 : l'appel exécuté a bien deux entrées.
         let intended = state
             .audit
             .iter()
@@ -516,7 +526,7 @@ mod tests {
             None,
         );
         assert_eq!(state.status, TaskStatus::Failed);
-        // Intention journalisée, pas de complétion : invariant 2.
+        // Intention journalisée, pas de complétion : invariant 3.
         assert!(state
             .audit
             .iter()
@@ -636,6 +646,23 @@ mod tests {
         assert_eq!(rebuilt, direct);
         assert_eq!(rebuilt.status, TaskStatus::Succeeded);
         assert_eq!(rebuilt.conclusion.as_deref(), Some("écrit"));
+    }
+
+    #[test]
+    fn inconsistent_suspension_without_pending_fails_cleanly() {
+        // L'état « WaitingApproval sans pending » est incohérent mais
+        // REPRÉSENTABLE (champs publics, enveloppe relue) : la machine doit
+        // clore la tâche en échec tracé, jamais paniquer le worker.
+        let mut state = TaskState::new(8, budget(10_000, 10_000));
+        state.status = TaskStatus::WaitingApproval;
+        state.pending = None;
+        run(vec![], vec![], &mut state, Some(ApprovalDecision::Approve));
+        assert_eq!(state.status, TaskStatus::Failed);
+        assert!(state.audit.iter().any(|event| matches!(
+            event,
+            AuditEvent::ToolCallDenied { reason, .. } if reason.contains("incohérent")
+        )));
+        assert_eq!(state.budget.consumed(), Cents::ZERO);
     }
 
     #[test]
