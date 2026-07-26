@@ -36,4 +36,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Outils de test
+proptest = "1"
 toml = "0.8"
