@@ -1,7 +1,7 @@
 # Backlog — ce qu'on refuse de coder maintenant
 
-Une fonctionnalité s'écrit quand un client l'a payée deux fois. Avant ça,
-elle vit ici.
+Une fonctionnalité s'écrit quand trois clients payants l'ont demandée
+(constitution v2). Avant ça, elle vit ici.
 
 | Date | Idée | Origine | Compteur de demandes client payantes |
 |---|---|---|---|
