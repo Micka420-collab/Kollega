@@ -1,0 +1,7 @@
+[package]
+name = "kollega-audit"
+version.workspace = true
+edition.workspace = true
+description = "Journal d'audit chaîné par hachage"
+
+[dependencies]

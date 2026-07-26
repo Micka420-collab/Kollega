@@ -1,0 +1,7 @@
+[package]
+name = "kollega-policy"
+version.workspace = true
+edition.workspace = true
+description = "Moteur de décision sur les appels d'outils"
+
+[dependencies]

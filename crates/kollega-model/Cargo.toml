@@ -1,0 +1,7 @@
+[package]
+name = "kollega-model"
+version.workspace = true
+edition.workspace = true
+description = "Trait ModelProvider et implémentations"
+
+[dependencies]

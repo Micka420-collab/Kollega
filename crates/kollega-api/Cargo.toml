@@ -1,0 +1,9 @@
+[package]
+name = "kollega-api"
+version.workspace = true
+edition.workspace = true
+description = "HTTP + SSE, rendu serveur"
+
+[dependencies]
+axum.workspace = true
+sqlx.workspace = true

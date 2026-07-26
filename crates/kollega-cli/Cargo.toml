@@ -1,0 +1,22 @@
+[package]
+name = "kollega-cli"
+version.workspace = true
+edition.workspace = true
+description = "Binaire kollega : serve, migrate, version"
+
+[[bin]]
+name = "kollega"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+kollega-api = { path = "../kollega-api" }
+kollega-store = { path = "../kollega-store" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+toml.workspace = true

@@ -1,0 +1,7 @@
+[package]
+name = "kollega-tools"
+version.workspace = true
+edition.workspace = true
+description = "Client MCP, registre d'outils"
+
+[dependencies]
