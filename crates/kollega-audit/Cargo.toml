@@ -2,6 +2,13 @@
 name = "kollega-audit"
 version.workspace = true
 edition.workspace = true
-description = "Journal d'audit chaîné par hachage"
+description = "Journal d'audit chaîné par hachage — partie pure (invariant 4)"
 
 [dependencies]
+hex.workspace = true
+kollega-core = { path = "../kollega-core" }
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true

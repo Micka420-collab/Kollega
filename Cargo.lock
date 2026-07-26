@@ -840,6 +840,13 @@ dependencies = [
 [[package]]
 name = "kollega-audit"
 version = "0.1.0"
+dependencies = [
+ "hex",
+ "kollega-core",
+ "sha2",
+ "thiserror",
+ "uuid",
+]
 
 [[package]]
 name = "kollega-cli"
