@@ -6,6 +6,15 @@ Spécification technique : `docs/encodage-canonique.md`.
 
 ## Le dispositif
 
+Fondation : l'encodage des octets hachés est **injectif** — prouvé par
+round-trip (un décodeur indépendant rend l'original : inverse à gauche,
+donc injectivité par construction) — et la spécification est **non
+ambiguë** — prouvée par le différentiel Rust ↔ Python en CI (deux lecteurs
+indépendants, mêmes octets, mêmes empreintes). La première propriété
+interdit deux enregistrements distincts aux mêmes octets ; la seconde
+permet à un auditeur tiers de vérifier la chaîne depuis la spécification
+seule, sans notre code. Cadrage détaillé : `docs/encodage-canonique.md` §7.
+
 Trois niveaux, chacun prouvé par des tests purs
 (`crates/kollega-audit`) :
 

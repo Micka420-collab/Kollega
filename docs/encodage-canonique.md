@@ -96,3 +96,29 @@ Cinq vecteurs figés dans `reference_vectors.rs` ; le premier est recoupé par
 un SHA-256 calculé hors Rust à chaque changement de version de ce format.
 Ne JAMAIS mettre à jour une empreinte attendue sans comprendre pourquoi elle
 a changé.
+
+## 7. Ce qui prouve quoi — cadrage (bloc 6, 28/07/2026)
+
+Deux dispositifs, deux propriétés distinctes — ne pas les confondre :
+
+- **L'injectivité est prouvée par le round-trip Rust**
+  (`crates/kollega-audit/tests/canonical_injectivity.rs`) : un décodeur
+  écrit depuis cette spécification, jamais depuis l'encodeur, rend
+  l'original pour toute valeur générée (proptest, biais vers les
+  séparateurs). Un encodage qui admet un inverse à gauche est **injectif
+  par construction** — deux valeurs distinctes ne peuvent pas produire les
+  mêmes octets, sinon le décodeur ne saurait pas rendre les deux. C'est
+  acquis, et c'est plus fort que « aucune collision observée ».
+- **La non-ambiguïté de LA SPÉCIFICATION est prouvée par le différentiel
+  Rust ↔ Python** (`tools/reference/canonical.py`, exécuté en CI depuis le
+  28/07/2026) : deux lecteurs indépendants de ce document produisent les
+  mêmes octets et les mêmes empreintes sur ≥ 14 000 vecteurs. Cela ne
+  prouve PAS l'injectivité — deux implémentations pourraient converger sur
+  un encodage ambigu — mais c'est exactement ce dont un **auditeur tiers**
+  a besoin : la garantie qu'il peut vérifier une chaîne depuis ce document
+  seul, sans notre code.
+
+Les deux ensemble : le format est injectif (personne ne peut forger deux
+enregistrements distincts à empreinte de contenu identique) ET
+indépendamment implémentable (personne n'est obligé de nous croire sur
+parole).
