@@ -161,6 +161,92 @@ impl TaskState {
     }
 }
 
+/// Version courante du format d'enveloppe d'état de tâche (bloc 5).
+///
+/// À INCRÉMENTER à chaque changement de forme de [`TaskState`] ou de ses
+/// composants sérialisés : sans cela, une mise en production rendrait les
+/// tâches suspendues illisibles — ou pire, MAL lisibles.
+pub const TASK_STATE_FORMAT_VERSION: u32 = 1;
+
+/// Erreur d'ouverture d'une enveloppe d'état.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum EnvelopeError {
+    /// La version portée par l'enveloppe n'est pas celle que ce binaire
+    /// sait lire : refus PROPRE, jamais une désérialisation hasardeuse.
+    #[error("version d'enveloppe d'état inconnue : {found} (supportée : {supported})")]
+    UnknownVersion {
+        /// Version trouvée dans l'enveloppe.
+        found: u32,
+        /// Version que ce binaire supporte.
+        supported: u32,
+    },
+}
+
+/// Enveloppe versionnée de l'état de tâche — LA forme qui se persiste.
+///
+/// Champs privés + désérialisation validante : une enveloppe d'une version
+/// inconnue ne peut pas exister en mémoire — `serde_json::from_str` échoue
+/// avec une erreur explicite au lieu de désérialiser de travers. Toute
+/// écriture de reprise passe par [`TaskStateEnvelope::seal`], toute lecture
+/// par la désérialisation puis [`TaskStateEnvelope::into_state`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TaskStateEnvelope {
+    version: u32,
+    state: TaskState,
+}
+
+impl TaskStateEnvelope {
+    /// Scelle un état dans une enveloppe à la version courante.
+    #[must_use]
+    pub const fn seal(state: TaskState) -> Self {
+        TaskStateEnvelope {
+            version: TASK_STATE_FORMAT_VERSION,
+            state,
+        }
+    }
+
+    /// La version du format (toujours la courante, par construction).
+    #[must_use]
+    pub const fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// Rend l'état. Infaillible : la construction et la désérialisation
+    /// garantissent la version.
+    #[must_use]
+    pub fn into_state(self) -> TaskState {
+        self.state
+    }
+}
+
+impl<'de> Deserialize<'de> for TaskStateEnvelope {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawEnvelope {
+            version: u32,
+            state: serde_json::Value,
+        }
+        let raw = RawEnvelope::deserialize(deserializer)?;
+        // La version d'abord, le contenu ensuite : une enveloppe d'une
+        // autre version n'est JAMAIS interprétée avec le schéma courant —
+        // c'est tout l'objet du refus propre (EnvelopeError, bloc 5).
+        if raw.version != TASK_STATE_FORMAT_VERSION {
+            return Err(serde::de::Error::custom(EnvelopeError::UnknownVersion {
+                found: raw.version,
+                supported: TASK_STATE_FORMAT_VERSION,
+            }));
+        }
+        let state = TaskState::deserialize(raw.state).map_err(serde::de::Error::custom)?;
+        Ok(TaskStateEnvelope {
+            version: raw.version,
+            state,
+        })
+    }
+}
+
 /// Applique le coût, met à jour le statut si une borne est franchie.
 /// Retourne `true` si l'on peut continuer, `false` si la tâche s'arrête.
 fn charge_or_stop(state: &mut TaskState, cost: Cents) -> bool {
@@ -531,11 +617,14 @@ mod tests {
             Some(ApprovalDecision::Approve),
         );
 
-        // (b) Reprise APRÈS sérialisation : le processus « redémarre ».
+        // (b) Reprise APRÈS sérialisation : le processus « redémarre ». Le
+        // chemin de persistance est l'ENVELOPPE versionnée (bloc 5), pas le
+        // TaskState nu.
         let mut suspended = TaskState::new(8, budget(10_000, 10_000));
         run(actions.clone(), decisions.clone(), &mut suspended, None);
-        let serialized = serde_json::to_string(&suspended).unwrap();
-        let mut rebuilt: TaskState = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&TaskStateEnvelope::seal(suspended)).unwrap();
+        let envelope: TaskStateEnvelope = serde_json::from_str(&serialized).unwrap();
+        let mut rebuilt = envelope.into_state();
         run(
             actions,
             decisions,
@@ -547,6 +636,41 @@ mod tests {
         assert_eq!(rebuilt, direct);
         assert_eq!(rebuilt.status, TaskStatus::Succeeded);
         assert_eq!(rebuilt.conclusion.as_deref(), Some("écrit"));
+    }
+
+    #[test]
+    fn envelope_round_trips_and_carries_the_current_version() {
+        let state = TaskState::new(8, budget(10_000, 10_000));
+        let sealed = TaskStateEnvelope::seal(state.clone());
+        assert_eq!(sealed.version(), TASK_STATE_FORMAT_VERSION);
+        let json = serde_json::to_string(&sealed).unwrap();
+        assert!(json.contains("\"version\":1"));
+        let reopened: TaskStateEnvelope = serde_json::from_str(&json).unwrap();
+        assert_eq!(reopened.into_state(), state);
+    }
+
+    #[test]
+    fn unknown_envelope_version_is_refused_cleanly_not_misread() {
+        // Une enveloppe d'une version future — dont l'état N'A PAS le
+        // schéma courant — doit être REFUSÉE avec une erreur qui nomme la
+        // version, jamais interprétée avec le schéma courant.
+        let future = r#"{"version":2,"state":{"forme":"inconnue de ce binaire"}}"#;
+        let error = serde_json::from_str::<TaskStateEnvelope>(future)
+            .expect_err("une version inconnue doit être refusée");
+        let message = error.to_string();
+        assert!(
+            message.contains("version d'enveloppe d'état inconnue : 2"),
+            "l'erreur doit nommer la version trouvée : {message}"
+        );
+        assert!(
+            message.contains("supportée : 1"),
+            "l'erreur doit nommer la version supportée : {message}"
+        );
+
+        // Une enveloppe SANS version est refusée aussi : le champ n'est pas
+        // optionnel, un état nu d'avant le bloc 5 ne passe pas pour une
+        // enveloppe.
+        assert!(serde_json::from_str::<TaskStateEnvelope>(r#"{"state":{}}"#).is_err());
     }
 
     #[test]
