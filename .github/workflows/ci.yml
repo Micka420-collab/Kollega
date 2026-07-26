@@ -30,28 +30,40 @@ jobs:
       contents: read
       packages: write
       id-token: write # signature cosign sans clé (OIDC)
-    env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/kollega
     steps:
       - uses: actions/checkout@v4
+      - name: Nom d'image en minuscules (exigence des références OCI)
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "IMAGE=ghcr.io/${OWNER,,}/kollega" >> "$GITHUB_ENV"
+      - name: Connexion au registre
+        # docker/login-action écrit ~/.docker/config.json, lu par podman,
+        # syft ET cosign — un podman login seul serait invisible pour cosign
+        # (XDG_RUNTIME_DIR n'est pas défini sur les runners hébergés).
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Construire l'image
         run: podman build -f deploy/Containerfile -t "$IMAGE:${{ github.sha }}" .
-      - name: Connexion au registre
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
-      - name: Publier
-        run: podman push "$IMAGE:${{ github.sha }}"
+      - name: Publier et capturer le digest
+        # La signature porte sur le digest immuable, pas sur un tag mutable.
+        run: |
+          podman push --digestfile image.digest "$IMAGE:${{ github.sha }}"
+          echo "IMAGE_REF=$IMAGE@$(cat image.digest)" >> "$GITHUB_ENV"
       - name: SBOM (syft)
         uses: anchore/sbom-action@v0
         with:
-          image: ${{ env.IMAGE }}:${{ github.sha }}
+          image: ${{ env.IMAGE_REF }}
           format: spdx-json
           output-file: sbom.spdx.json
       - name: Installer cosign
         uses: sigstore/cosign-installer@v3
       - name: Signer l'image (sans clé, OIDC)
-        run: cosign sign --yes "$IMAGE:${{ github.sha }}"
+        run: cosign sign --yes "$IMAGE_REF"
       - name: Attester le SBOM
-        run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE:${{ github.sha }}"
+        run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
       - uses: actions/upload-artifact@v4
         with:
           name: sbom
