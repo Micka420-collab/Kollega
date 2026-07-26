@@ -33,6 +33,19 @@ fn allowed_internal(name: &str) -> &'static [&'static str] {
         "kollega-model",
         "kollega-runtime",
     ];
+    // L'API accède aux données via le point de passage unique de kollega-store
+    // (invariant 1) : l'arête api -> store est la seule permise entre ces deux
+    // crates, jamais l'inverse.
+    const UPPER_AND_STORE: &[&str] = &[
+        "kollega-core",
+        "kollega-policy",
+        "kollega-audit",
+        "kollega-memory",
+        "kollega-tools",
+        "kollega-model",
+        "kollega-runtime",
+        "kollega-store",
+    ];
     const ALL: &[&str] = &[
         "kollega-core",
         "kollega-policy",
@@ -49,7 +62,8 @@ fn allowed_internal(name: &str) -> &'static [&'static str] {
         "kollega-policy" | "kollega-audit" | "kollega-memory" | "kollega-tools"
         | "kollega-model" => LOWER,
         "kollega-runtime" => MIDDLE,
-        "kollega-store" | "kollega-api" => UPPER,
+        "kollega-store" => UPPER,
+        "kollega-api" => UPPER_AND_STORE,
         "kollega-cli" => ALL,
         other => panic!("crate inconnue dans le workspace : {other}"),
     }

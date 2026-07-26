@@ -10,7 +10,7 @@ edition = "2021"
 # Domaine (seules dépendances autorisées dans kollega-core — invariant 9)
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-uuid = { version = "1", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v4"] }
 time = { version = "0.3", features = ["serde"] }
 
 # Périphérie

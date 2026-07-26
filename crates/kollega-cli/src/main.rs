@@ -6,7 +6,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "kollega", version, about = "Runtime d'agents IA gouvernés")]
+#[command(name = "kollega", version, about = "Plateforme d'agents IA gouvernés")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -14,20 +14,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Démarre le serveur HTTP.
+    /// Démarre le serveur HTTP (rôle base : kollega_app, jamais un autre).
     Serve {
         /// Adresse d'écoute.
         #[arg(long, env = "KOLLEGA_LISTEN", default_value = "127.0.0.1:8080")]
         listen: String,
     },
-    /// Applique les migrations à la base de données.
+    /// Applique les migrations (rôle base : kollega_migrate).
+    ///
+    /// Si KOLLEGA_APP_DB_PASSWORD est défini, pose ensuite le mot de passe du
+    /// rôle applicatif kollega_app (le secret vient de l'environnement, jamais
+    /// d'une migration).
     Migrate,
     /// Affiche la version du binaire.
     Version,
 }
 
-fn database_url() -> anyhow::Result<String> {
-    std::env::var("DATABASE_URL").context("la variable d'environnement DATABASE_URL est absente")
+fn env_var(name: &str) -> anyhow::Result<String> {
+    std::env::var(name).with_context(|| format!("la variable d'environnement {name} est absente"))
 }
 
 #[tokio::main]
@@ -41,10 +45,10 @@ async fn main() -> anyhow::Result<()> {
 
     match Cli::parse().command {
         Command::Serve { listen } => {
-            let pool = kollega_store::connect(&database_url()?)
+            let db = kollega_store::Db::connect(&env_var("DATABASE_URL")?)
                 .await
                 .context("connexion à PostgreSQL impossible")?;
-            let app = kollega_api::router(pool);
+            let app = kollega_api::router(db);
             let listener = tokio::net::TcpListener::bind(&listen)
                 .await
                 .with_context(|| format!("impossible d'écouter sur {listen}"))?;
@@ -54,13 +58,17 @@ async fn main() -> anyhow::Result<()> {
                 .context("le serveur HTTP s'est arrêté en erreur")?;
         }
         Command::Migrate => {
-            let pool = kollega_store::connect(&database_url()?)
-                .await
-                .context("connexion à PostgreSQL impossible")?;
-            kollega_store::run_migrations(&pool)
+            let migrate_url = env_var("KOLLEGA_MIGRATE_DATABASE_URL")?;
+            kollega_store::run_migrations(&migrate_url)
                 .await
                 .context("échec de l'application des migrations")?;
             println!("migrations appliquées");
+            if let Ok(password) = std::env::var("KOLLEGA_APP_DB_PASSWORD") {
+                kollega_store::set_app_role_password(&migrate_url, &password)
+                    .await
+                    .context("échec de la mise à jour du mot de passe de kollega_app")?;
+                println!("mot de passe du rôle kollega_app synchronisé");
+            }
         }
         Command::Version => println!("kollega {}", env!("CARGO_PKG_VERSION")),
     }

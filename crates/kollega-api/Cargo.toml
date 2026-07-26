@@ -6,4 +6,4 @@ description = "HTTP + SSE, rendu serveur"
 
 [dependencies]
 axum.workspace = true
-sqlx.workspace = true
+kollega-store = { path = "../kollega-store" }

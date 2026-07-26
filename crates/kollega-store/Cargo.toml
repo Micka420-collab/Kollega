@@ -2,7 +2,12 @@
 name = "kollega-store"
 version.workspace = true
 edition.workspace = true
-description = "Persistance PostgreSQL (sqlx)"
+description = "Persistance PostgreSQL — point de passage unique vers la base"
 
 [dependencies]
 sqlx.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

@@ -1,4 +1,7 @@
 //! Couche HTTP (axum). Au jalon M0 : `GET /health`, rien d'autre.
+//!
+//! L'accès aux données passe exclusivement par `kollega_store::Db` — le point
+//! de passage unique qui pose le contexte d'organisation (invariant 1).
 
 #![forbid(unsafe_code)]
 
@@ -6,17 +9,17 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::Router;
-use sqlx::PgPool;
+use kollega_store::Db;
 
 /// Construit le routeur HTTP de l'application.
-pub fn router(pool: PgPool) -> Router {
-    Router::new().route("/health", get(health)).with_state(pool)
+pub fn router(db: Db) -> Router {
+    Router::new().route("/health", get(health)).with_state(db)
 }
 
 /// Vérifie réellement la connexion à la base : un `SELECT 1` doit aboutir.
-async fn health(State(pool): State<PgPool>) -> (StatusCode, &'static str) {
-    match sqlx::query("SELECT 1").execute(&pool).await {
-        Ok(_) => (StatusCode::OK, "ok"),
+async fn health(State(db): State<Db>) -> (StatusCode, &'static str) {
+    match db.health().await {
+        Ok(()) => (StatusCode::OK, "ok"),
         Err(_) => (
             StatusCode::SERVICE_UNAVAILABLE,
             "base de données injoignable",
