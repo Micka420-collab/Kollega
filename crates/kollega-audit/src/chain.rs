@@ -44,11 +44,15 @@ pub struct EntryContent {
     pub timestamp_micros: i64,
 }
 
-/// Entrée chaînée : contenu + lien vers la précédente + empreinte.
+/// Entrée chaînée : contenu + position + lien vers la précédente + empreinte.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChainedEntry {
     /// Le contenu haché.
     pub content: EntryContent,
+    /// Hauteur dans la chaîne (0 pour la première entrée). Incluse dans les
+    /// octets hachés : une entrée déplacée ou rejouée à une autre position
+    /// invalide la chaîne même si tout le reste est cohérent.
+    pub height: u64,
     /// Empreinte de l'entrée précédente ; `None` pour la première.
     pub prev_hash: Option<Hash32>,
     /// Empreinte de cette entrée.
@@ -105,16 +109,19 @@ impl OrgChain {
 
     /// Octets canoniques de l'enregistrement complet.
     ///
-    /// Ordre des champs FIGÉ et documenté :
-    /// `{"action":…,"actor":…,"org_id":…,"payload":…}` — l'horodatage n'est
-    /// pas dans cet encodage, il est concaténé séparément (définition de
-    /// l'empreinte, voir la documentation de crate).
-    fn canonical_record(&self, content: &EntryContent) -> String {
+    /// Ordre des champs FIGÉ et documenté (spécification :
+    /// `docs/encodage-canonique.md`) :
+    /// `{"action":…,"actor":…,"height":…,"org_id":…,"payload":…}` —
+    /// l'horodatage n'est pas dans cet encodage, il est concaténé séparément
+    /// (définition de l'empreinte, voir la documentation de crate).
+    fn canonical_record(&self, height: u64, content: &EntryContent) -> String {
         let mut out = String::new();
         out.push_str("{\"action\":");
         encode_text(&content.action, &mut out);
         out.push_str(",\"actor\":");
         encode_text(&content.actor, &mut out);
+        out.push_str(",\"height\":");
+        out.push_str(&height.to_string());
         out.push_str(",\"org_id\":");
         encode_text(&self.org_id.to_string(), &mut out);
         out.push_str(",\"payload\":");
@@ -123,32 +130,42 @@ impl OrgChain {
         out
     }
 
-    /// Empreinte d'une entrée pour CETTE organisation :
+    /// Empreinte d'une entrée pour CETTE organisation, à cette hauteur :
     /// `SHA-256(prev_hash || enregistrement_canonique || horodatage)`.
     ///
-    /// Pour la première entrée (`prev_hash = None`), le préfixe est 32
-    /// octets à zéro : le préimage a toujours un préfixe de longueur fixe,
-    /// la séparation des champs est structurelle, pas computationnelle.
+    /// Pour la première entrée (`prev_hash = None`, hauteur 0), le préfixe
+    /// est 32 octets à zéro : le préimage a toujours un préfixe de longueur
+    /// fixe, la séparation des champs est structurelle, pas computationnelle.
     #[must_use]
-    pub fn entry_hash(&self, prev_hash: Option<&Hash32>, content: &EntryContent) -> Hash32 {
+    pub fn entry_hash(
+        &self,
+        height: u64,
+        prev_hash: Option<&Hash32>,
+        content: &EntryContent,
+    ) -> Hash32 {
         let mut hasher = Sha256::new();
         match prev_hash {
             Some(prev) => hasher.update(prev.0),
             None => hasher.update([0u8; 32]),
         }
-        hasher.update(self.canonical_record(content).as_bytes());
+        hasher.update(self.canonical_record(height, content).as_bytes());
         hasher.update(content.timestamp_micros.to_string().as_bytes());
         Hash32(hasher.finalize().into())
     }
 
-    /// Chaîne une nouvelle entrée après `tail` (l'empreinte de la dernière
-    /// entrée, ou `None` si la chaîne est vide).
+    /// Chaîne une nouvelle entrée après `tail` (la dernière entrée, ou
+    /// `None` si la chaîne est vide) : la hauteur et le lien en découlent.
     #[must_use]
-    pub fn append(&self, tail: Option<&Hash32>, content: EntryContent) -> ChainedEntry {
-        let hash = self.entry_hash(tail, &content);
+    pub fn append(&self, tail: Option<&ChainedEntry>, content: EntryContent) -> ChainedEntry {
+        let (height, prev_hash) = match tail {
+            None => (0, None),
+            Some(previous) => (previous.height + 1, Some(previous.hash)),
+        };
+        let hash = self.entry_hash(height, prev_hash.as_ref(), &content);
         ChainedEntry {
             content,
-            prev_hash: tail.copied(),
+            height,
+            prev_hash,
             hash,
         }
     }
@@ -167,13 +184,22 @@ impl OrgChain {
     pub fn verify(&self, entries: &[ChainedEntry]) -> Result<(), ChainBreak> {
         let mut expected_prev: Option<Hash32> = None;
         for (position, entry) in entries.iter().enumerate() {
+            // La hauteur stockée doit être la position réelle : une entrée
+            // déplacée est une rupture structurelle avant même le hachage.
+            if entry.height != position as u64 {
+                return Err(ChainBreak {
+                    position,
+                    kind: ChainBreakKind::BrokenLink,
+                });
+            }
             if entry.prev_hash != expected_prev {
                 return Err(ChainBreak {
                     position,
                     kind: ChainBreakKind::BrokenLink,
                 });
             }
-            let recomputed = self.entry_hash(entry.prev_hash.as_ref(), &entry.content);
+            let recomputed =
+                self.entry_hash(entry.height, entry.prev_hash.as_ref(), &entry.content);
             if recomputed != entry.hash {
                 return Err(ChainBreak {
                     position,
@@ -235,8 +261,8 @@ mod tests {
     fn build(chain: &OrgChain, n: i64) -> Vec<ChainedEntry> {
         let mut entries: Vec<ChainedEntry> = Vec::new();
         for i in 0..n {
-            let tail = entries.last().map(|e| e.hash);
-            entries.push(chain.append(tail.as_ref(), content(i)));
+            let next = chain.append(entries.last(), content(i));
+            entries.push(next);
         }
         entries
     }
@@ -359,9 +385,54 @@ mod tests {
     fn hash_depends_on_prev() {
         let chain = chain_a();
         let c = content(0);
-        let h_genesis = chain.entry_hash(None, &c);
-        let other = chain.entry_hash(Some(&h_genesis), &c);
+        let h_genesis = chain.entry_hash(0, None, &c);
+        let other = chain.entry_hash(1, Some(&h_genesis), &c);
         assert_ne!(h_genesis, other);
+    }
+
+    #[test]
+    fn same_content_at_different_heights_hashes_differently() {
+        // BLOC 4 : la hauteur est dans les octets hachés — rejouer le même
+        // contenu à une autre position produit une autre empreinte.
+        let chain = chain_a();
+        let c = content(0);
+        let h0 = chain.entry_hash(3, None, &c);
+        let h1 = chain.entry_hash(4, None, &c);
+        assert_ne!(h0, h1);
+    }
+
+    #[test]
+    fn entry_moved_one_position_is_detected() {
+        // Un attaquant déplace l'entrée 2 en position 1 en recousant le lien.
+        let chain = chain_a();
+        let entries = build(&chain, 3);
+
+        // Variante 1 : il garde la hauteur d'origine (2) → rupture
+        // structurelle (hauteur ≠ position).
+        let mut moved = entries[2].clone();
+        moved.prev_hash = Some(entries[0].hash);
+        let forged = vec![entries[0].clone(), moved];
+        assert_eq!(
+            chain.verify(&forged),
+            Err(ChainBreak {
+                position: 1,
+                kind: ChainBreakKind::BrokenLink,
+            })
+        );
+
+        // Variante 2 : il réécrit la hauteur à 1 — l'empreinte, calculée à
+        // la hauteur 2, ne correspond plus.
+        let mut moved = entries[2].clone();
+        moved.height = 1;
+        moved.prev_hash = Some(entries[0].hash);
+        let forged = vec![entries[0].clone(), moved];
+        assert_eq!(
+            chain.verify(&forged),
+            Err(ChainBreak {
+                position: 1,
+                kind: ChainBreakKind::AlteredEntry,
+            })
+        );
     }
 
     #[test]
@@ -397,11 +468,11 @@ mod tests {
         let mut forged: Vec<ChainedEntry> = entries[..2].to_vec();
         let mut altered = content(2);
         altered.actor = "attaquant".to_owned();
-        let tail = forged.last().map(|e| e.hash);
-        forged.push(chain.append(tail.as_ref(), altered));
+        let next = chain.append(forged.last(), altered);
+        forged.push(next);
         for i in 3..5 {
-            let tail = forged.last().map(|e| e.hash);
-            forged.push(chain.append(tail.as_ref(), content(i)));
+            let next = chain.append(forged.last(), content(i));
+            forged.push(next);
         }
 
         assert_eq!(chain.verify(&forged), Ok(()), "limite assumée de verify");
@@ -418,7 +489,7 @@ mod tests {
     fn verify_with_tail_on_empty_chain() {
         let chain = chain_a();
         assert_eq!(chain.verify_with_tail(&[], None), Ok(()));
-        let phantom = chain.entry_hash(None, &content(0));
+        let phantom = chain.entry_hash(0, None, &content(0));
         assert_eq!(
             chain.verify_with_tail(&[], Some(&phantom)),
             Err(ChainBreak {

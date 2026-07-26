@@ -9,11 +9,12 @@
 //! - `prev_hash` : les 32 octets de l'empreinte précédente, ou **32 octets à
 //!   zéro** pour la première entrée de la chaîne — le préfixe est ainsi de
 //!   longueur réellement fixe ;
-//! - `payload_canonique` : l'encodage canonique (voir [`canonical`]) de
-//!   l'enregistrement complet — action, actor, org_id, payload — dans cet
-//!   ordre, figé. Inclure l'acteur, l'action et l'organisation dans les
-//!   octets hachés protège l'intégralité de l'enregistrement, pas seulement
-//!   sa charge utile ;
+//! - `payload_canonique` : l'encodage canonique (voir [`canonical`] et la
+//!   spécification `docs/encodage-canonique.md`) de l'enregistrement complet
+//!   — action, actor, height, org_id, payload — dans cet ordre, figé.
+//!   Inclure l'acteur, l'action, la hauteur et l'organisation dans les
+//!   octets hachés protège l'intégralité de l'enregistrement et sa position :
+//!   une entrée déplacée ou rejouée ailleurs invalide la chaîne ;
 //! - `horodatage` : microsecondes depuis l'époque Unix (i64), en décimal
 //!   ASCII. Ce choix suit la précision de `timestamptz` (PostgreSQL,
 //!   microseconde) : l'empreinte survivra à l'aller-retour en base.
