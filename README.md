@@ -11,7 +11,7 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 ## État réel au 28/07/2026
 
-`cargo test --workspace` : **142 tests, 0 échec** en local, et désormais **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
+`cargo test --workspace` : **155 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
 
 **L'invariant 1 (isolation multi-tenant par RLS) est prouvé depuis le 28/07/2026** : CI run 30223145565 verte avec la politique en place, puis run 30223419721 **rouge** sur une branche jetable où la politique `tenant_isolation` avait été volontairement retirée — la preuve que le test sait échouer. La branche de sabotage a été supprimée après lecture du rouge.
 
@@ -19,18 +19,17 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 | Crate | Contenu réel |
 |---|---|
-| `kollega-core` | Types du domaine validés à la construction (`Cents(i64)`, plafond de coût, statuts de tâche…) ; assemblage de prompt à trois origines `SystemInstruction` / `UserRequest` / `ExternalContent` rendu non-confondable par les types (invariant 7), corpus hostile de 34 cas ; proptest. |
-| `kollega-audit` | Chaîne de hachage **pure** par organisation : encodage canonique injectif (spécifié dans [`docs/encodage-canonique.md`](docs/encodage-canonique.md), proptest ~4000 cas sans collision), hauteur de chaîne incluse dans les octets hachés, ancre de confiance monotone ; [modèle de menace écrit](docs/audit-modele-de-menace.md) qui dit aussi ce que la chaîne ne prouve **pas**. |
-| `kollega-policy` | Moteur de décision **pur** : refus par défaut (outil sans règle = refusé), limite dure / seuil souple distingués sur chaque borne, la limite dure gagne toujours. |
-| `kollega-runtime` | Noyau crédit + plafond **pur** : refus avant facturation, solde jamais négatif, conservation des débits, débordement `i64` traité, arrêt propre `aborted_cost_ceiling` distinct d'un échec ; machine à états d'agent pure et **reprise-compatible** (rejouer après sérialisation JSON = parcours direct, 6 scénarios). |
-| `kollega-api` | Hachage de mots de passe argon2id, vérification avec les paramètres stockés, bornes plancher/plafond ([ADR-0006](docs/adr/0006-verification-des-mots-de-passe.md)). Pas encore de serveur HTTP qui tourne. |
+| `kollega-core` | Types du domaine validés à la construction (`Cents(i64)`, plafond de coût, statuts de tâche…) ; assemblage de prompt à trois origines `SystemInstruction` / `UserRequest` / `ExternalContent` rendu non-confondable par les types (invariant 7) — **confinement pur : le contenu externe est transporté verbatim**, corpus hostile de 34 cas + proptest ([modèle de menace v2](docs/invariant-7-modele-de-menace.md)). |
+| `kollega-audit` | Chaîne de hachage **pure** par organisation : encodage canonique injectif (round-trip par décodeur indépendant), hauteur incluse dans les octets hachés, ancre de confiance monotone ; **spécification confirmée par différentiel Rust ↔ Python en CI** (14 014 vecteurs, zéro divergence) ; [modèle de menace](docs/audit-modele-de-menace.md) qui dit aussi ce que la chaîne ne prouve **pas**. |
+| `kollega-policy` | Moteur de décision **pur** : refus par défaut (outil sans règle = refusé), **bornes à deux étages** — seuil de validation puis limite dure au-dessus, que nulle validation ne lève (le « souple sans plafond » n'est plus représentable) ; fail-open du préfixe vide fermé. |
+| `kollega-runtime` | Noyau crédit + plafond **pur** : refus avant facturation, solde jamais négatif, arrêt propre `aborted_cost_ceiling` distinct d'un échec ; machine à états **reprise-compatible** persistée via une **enveloppe versionnée** (version inconnue = refus net, jamais une désérialisation hasardeuse). |
+| `kollega-api` | Hachage argon2id, vérification aux paramètres stockés bornés (plancher 8 Mio, **plafond 64 Mio**) + **sémaphore de concurrence** (au-delà de la borne, les vérifications attendent, elles n'échouent pas) — [ADR-0006 amendée](docs/adr/0006-verification-des-mots-de-passe.md). Pas encore de serveur HTTP qui tourne. |
 | `kollega-store` | Point de passage unique du contexte d'organisation (`SET LOCAL app.current_org`) + garde textuelle exécutée. |
 | Garde-fou global | Test du graphe de dépendances qui **échoue** si `sqlx`, `reqwest` ou `tokio` entre dans `kollega-core` (invariant 11), liste blanche sur toutes les sections de Cargo.toml. |
 
-### Écrit mais jamais exécuté — donc non prouvé
+### Prouvé aussi, depuis le 28/07/2026
 
-- **Les migrations de retour arrière** (`migrations/*.down.sql`, invariant 13) : écrites, jamais appliquées. La CI actuelle ne les joue pas, et aucun chemin de descente n'existe encore dans l'outillage (`sqlx::migrate!` ne descend pas).
-- **La référence Python** de l'encodage canonique (`tools/reference/canonical.py`) : jamais confrontée à l'implémentation Rust — le runner CI a Python, le test différentiel reste à brancher.
+- **La réversibilité des migrations** (invariant 13) : le job CI `reversibilite` joue up → down → diff avec l'état vierge → re-up → diff (schéma, rôles, extensions, ACL effective) sur un cluster dédié — **vert à la run n°15**, après cinq rouges instructifs (réglage de la comparaison d'ACL, puis jeton aléatoire `\restrict` de pg_dump ≥ 18). Dossier de preuve archivé sur la branche `ci-diagnostic`. Réserve : prouvé via psql — l'outillage applicatif (`sqlx::migrate!`) n'a pas encore de chemin de descente.
 
 ### Pas encore construit
 
@@ -42,14 +41,14 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 | Jalon | État |
 |---|---|
-| M0 — Socle multi-tenant (RLS, rôles, CI, image) | **Prouvé le 28/07/2026** : test d'isolation exécuté sur PostgreSQL réel en CI (run 30223145565), sensibilité démontrée (run 30223419721 rouge, politique retirée sur branche jetable), image OCI signée cosign + SBOM publiés. Reste hors preuve : les `.down.sql` (voir ci-dessus). |
+| M0 — Socle multi-tenant (RLS, rôles, CI, image) | **Prouvé le 28/07/2026, intégralement** : isolation RLS sur PostgreSQL réel (run 30223145565), sensibilité démontrée (run 30223419721 rouge, politique retirée), réversibilité des migrations jouée et vérifiée (run n°15), image OCI signée cosign + SBOM publiés. |
 | M1 — Identité, audit, politiques | **Surface pure faite en avance** (types, chaîne d'audit, moteur de politiques, argon2id) ; la persistance PostgreSQL reste à brancher. |
 | M3 — Runtime et crédits | **Noyau pur fait en avance** (budget, machine à états) ; la concurrence sur le crédit est [spécifiée](docs/credits-concurrence.md), non implémentée. |
 | M2, M4–M7 | Non commencés. |
 
 ### Invariants — 13, état résumé
 
-**Prouvés** : **1 (isolation RLS — CI du 28/07/2026, sensibilité comprise ; la partie vectorielle attend M5)**, 4 (chaîne d'audit, partie pure), 7 (assemblage, corpus adversarial de 34 cas), 11 (core sans entrée-sortie). **Prouvés en partie** (le niveau pur l'est, l'application réelle dépend d'un jalon futur) : 2, 3, 5, 6. **Sans test aujourd'hui** : 8, 9, 10, 12 (jalons non commencés) — et **13 a des retours arrière écrits mais jamais exécutés**. Détail ligne par ligne : [`docs/matrice-invariants.md`](docs/matrice-invariants.md).
+**Prouvés** : **1 (isolation RLS — CI du 28/07/2026, sensibilité comprise ; la partie vectorielle attend M5)**, 4 (chaîne d'audit, partie pure + spec confirmée par différentiel indépendant), 7 (assemblage en confinement, corpus 34 cas + proptest verbatim), 11 (core sans entrée-sortie). **Prouvés en partie** (le niveau pur l'est, l'application réelle dépend d'un jalon futur) : 2, 3, 5, 6. **Sans test aujourd'hui** : 8, 9, 10, 12 (jalons non commencés). **13 : prouvé** (CI run n°15 — down rend l'état vierge, re-up reproduit l'état). Détail : [`docs/matrice-invariants.md`](docs/matrice-invariants.md).
 
 ---
 

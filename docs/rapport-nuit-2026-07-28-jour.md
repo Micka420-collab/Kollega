@@ -57,8 +57,8 @@ vectorielle n'existe (M5).
 | 6 Cadrage injectivité (doc) | terminé | 0 (document) |
 | 7 Méthode de travail, six corrections | terminé | 0 (document) |
 | 8 Coutures | terminé **sans code** — décisions d'architecture, options recommandées consignées | 0 |
-| 9 Réversibilité en CI | écrit et poussé, verdict section 5 | 0 |
-| 10 Matrice à jour | terminé (avec ce rapport) | 0 |
+| 9 Réversibilité en CI | **terminé — PROUVÉ run n°15** (5 rouges instructifs, section 5) | 2 |
+| 10 Matrice à jour | terminé (invariants 1, 2, 7, 12, 13 + lecture d'ensemble) | 0 |
 | 11 Approfondissement libre | partiel : 2 corrections ciblées (expect(), numérotation) | — |
 
 Hors blocs, sur consigne reçue en cours de session : README créé puis tenu
@@ -105,17 +105,21 @@ recommandation M4 (relance client) notée au backlog SANS être appliquée.
 
 ## 5. Écrit mais non (encore) vérifié
 
-- **Réversibilité des migrations (invariant 13)** : premier passage du job
-  `reversibilite` (run n°10) : **ROUGE**, à l'étape aller-retour —
-  exactement le genre de trouvaille que le protocole promettait. Sans accès
-  aux logs (jeton requis), cause diagnostiquée par raisonnement : la
-  comparaison d'ACL BRUTE — un `nspacl` NULL (jamais touché) et un `nspacl`
-  matérialisé aux entrées par défaut après GRANT+REVOKE sont le MÊME état
-  de droits, mais pas le même texte ; le REVOKE du `.down` ne rend jamais
-  le NULL initial. Correctif poussé : comparaison de l'ACL EFFECTIVE
-  (`aclexplode` + `acldefault`), versions client/serveur affichées,
-  `set -x`. Verdict de la reprise : à lire en Actions — si c'est encore
-  rouge, les logs diront désormais où.
+- **Réversibilité des migrations (invariant 13) : PROUVÉE, run n°15** —
+  après CINQ rouges, chacun utile. Chronique complète : run 10 rouge →
+  hypothèse ACL brute (un `nspacl` matérialisé après GRANT+REVOKE n'est
+  pas le texte du NULL initial), correctif `aclexplode`+`acldefault` ;
+  run 12 encore rouge et les journaux exigent un jeton → construction d'un
+  canal de diagnostic lisible en anonyme (résumé de job d'abord — pas
+  rendu dans le HTML public — puis branche `ci-diagnostic` via
+  raw.githubusercontent.com) ; run 14 : diagnostic limpide — rôles,
+  extensions, ACL effective et schéma réel IDENTIQUES au vierge, seule
+  divergence : le jeton ALÉATOIRE `\restrict` que pg_dump ≥ 18 tire à
+  chaque invocation (bruit d'outillage, pas défaut de migration) ;
+  filtré → run 15 VERTE. Les `.down.sql` étaient corrects depuis le
+  début ; ce qui ne l'était pas, c'était la mesure. Réserve maintenue :
+  prouvé via psql — l'outillage applicatif (`sqlx::migrate!`) n'a
+  toujours aucun chemin de descente.
 - Les coutures machine→chaîne d'audit et machine→policy réel : options
   recommandées écrites (questions-nuit), rien de câblé — le graphe de
   dépendances gelé t'appartient.
@@ -154,17 +158,18 @@ rien en production.
 
 ## 8. Ce que je ferais en premier à ta place
 
-1. **Lire le verdict de la run n°10** (réversibilité) et, s'il est rouge,
-   me relancer dessus : c'est la dernière dette de preuve du socle.
-2. **Trancher les trois décisions qui n'attendent que toi** : M4
+1. **Trancher les trois décisions qui n'attendent que toi** : M4
    comptes-rendus→relance client (backlog), canal expert-comptable,
    les deux arêtes du graphe (runtime→audit, runtime→policy).
-3. **Sauvegarder `doc/`** (audit stratégique, dossier banque, classeur) :
+2. **Sauvegarder `doc/`** (audit stratégique, dossier banque, classeur) :
    il est HORS git — le push ne le protège pas. Un incident disque
    l'efface encore.
-4. Les trois actions à coût nul de l'analyse stratégique : la lettre R7,
+3. Les trois actions à coût nul de l'analyse stratégique : la lettre R7,
    le tableur d'économie unitaire, les quinze entretiens (les seize
    questions sont prêtes dans la méthode de travail).
+4. Optionnel : supprimer ou garder la branche `ci-diagnostic` (canal de
+   diagnostic anonyme du job de réversibilité — elle se réécrit à chaque
+   run et ne contient que des instantanés de schéma).
 
 ## 9. Inquiétudes
 
