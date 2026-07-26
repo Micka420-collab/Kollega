@@ -1,32 +1,32 @@
 # État de session — mis à jour après chaque bloc
 
-Session en cours : nuit du 27 au 28/07/2026. Base PostgreSQL : ABSENTE
-(port 5432 fermé, pas de psql, pas d'URL) → surface pure uniquement.
-Python : ABSENT → test différentiel du BLOC 7 non exécutable cette nuit.
-Remote : absent → commits locaux.
+Session en cours : 28/07/2026 (reprise après la nuit du 27 au 28).
+Environnement : **remote GitHub actif** (origin = Micka420-collab/Kollega,
+poussé, CI opérationnelle) ; PostgreSQL local ABSENT (la base réelle n'existe
+qu'en CI) ; Python local ABSENT (présent sur le runner CI).
+
+Faits nouveaux depuis le dernier rapport : README.md créé et poussé
+(commit d582a6c) ; Cargo.lock resynchronisé (3ea9d8b) ; **CI run n°1 VERTE**
+(run 30223145565, jobs verifications + image, image signée et SBOM publiés).
+Sensibilité du test RLS non encore prouvée par exécution → en cours.
 
 | Bloc | Statut | Tours d'approfondissement | Note |
 |---|---|---|---|
-| 0 — Reprise | terminé | — | Premier passage du prompt permanent ; fichier créé |
-| 1 — Prouver M0 | abandonné (pas de base) | 0 | Reste LE jalon non prouvé ; exige PostgreSQL ou remote+CI |
-| 2 — Retirer l'épinglage argon2 | terminé | 1 | ADR-0006 ; bornes plancher/plafond, ValidNeedsRehash ; tour 1 : mauvais mdp sur profil ancien → Invalid (pas Rehash), refus m=4Gio chronométré sans allocation |
-| 3 — Limite dure / seuil souple | terminé | 1 | Bound{max, on_exceed} explicite ; tour 1 : combinaisons dur+souple (le dur gagne), fusion des raisons souples, violations de protocole insensibles au mode |
-| 4 — Numéro de séquence haché | terminé | 1 | Format v3, spec docs/encodage-canonique.md créée ; vecteurs régénérés, V1 recoupé hors Rust ; tour 1 : déplacement avec hauteur conservée ET réécrite, les deux détectés |
-| 5 — Ancre de chaîne, pur | terminé | 1 | verify_with_anchor + AnchorPublisher monotone + modèle de menace ; tour 1 : test de la fenêtre d'ancrage (limite démontrée, pas cachée) |
-| 6 — Assemblage des segments (inv. 7) | terminé | 1 | compile() structuré + corpus 35 cas + modèle de menace ; tour 1 : très long tronqué, sérialisation garde l'origine |
-| 7 — Injectivité de l'encodeur | terminé | 1 | round-trip proptest 4000 cas + chasse séparateur, aucune collision ; réf Python NON VÉRIFIÉE (absent) ; tour 1 : clé avec guillemet+virgule, antislash avant guillemet |
-| 13 — Corrections CLAUDE.md | terminé | 0 | 4 corrections proposées, fichier non touché |
-| 8 — Propriétés surface pure | non commencé | 0 | |
-| 9 — Plafond et crédit, noyau pur | terminé | 1 | Budget::charge + proptest conservation ; tour 1 : débordement i64 → plafond (pas erreur), refus avant facturation ; docs/credits-concurrence.md |
-| 8 — Propriétés surface pure | terminé | 1 | proptest core/audit/policy ; tour 1 : le garde-fou a attrapé proptest en dev-dep de core (ajouté à la liste blanche, décision consignée) |
-| 10 — Boucle d'agent, machine à états | terminé | 0 | drive() pur, 6 scénarios dont reprise après sérialisation JSON identique au parcours direct |
-| 11 — Matrice invariant → test | terminé | 0 | 13 invariants, honnête ; inv. 1 et 13 non exécutés soulignés |
-| 12 — Méthode de travail (document) | terminé | 0 | 4 paliers, mandat, 10 questions réfutables |
-| 13 — Corrections CLAUDE.md proposées | non commencé | 0 | |
+| 0 — Reprise | terminé | — | Aucun bloc INTERROMPU EN COURS hérité ; suspens du 28/07 repris ci-dessous |
+| 1 — CI (priorité absolue) | en cours | 0 | **Invariant 1 PROUVÉ 28/07/2026** : run 30223145565 verte, run 30223419721 ROUGE (branche jetable `ci-sensibilite-rls`, politique users retirée, supprimée après lecture). Réserve : logs bruts inaccessibles (403 sans jeton) — impossible de distinguer lequel des deux tests RLS a rougi. Consigné dans matrice + README + en-têtes. Reste du bloc : test différentiel canonical.py (le runner a Python) |
+| 2 — Retirer la neutralisation (inv. 7) | non commencé | 0 | |
+| 3 — Argon2 : plafond 64 Mio + sémaphore | non commencé | 0 | |
+| 4 — Bornes à deux étages | non commencé | 0 | |
+| 5 — Version dans l'enveloppe d'état | non commencé | 0 | |
+| 6 — Cadrage preuve d'injectivité (doc) | non commencé | 0 | |
+| 7 — Méthode de travail : six corrections | non commencé | 0 | |
+| 8 — Coutures (AuditEvent, policy réel) | non commencé | 0 | |
+| 9 — Réversibilité des migrations en CI | non commencé | 0 | |
+| 10 — Matrice invariant → test à jour | non commencé | 0 | |
+| 11 — Approfondissement libre | non commencé | 0 | |
 
-Laissé en suspens par la session précédente (rapport du 27/07) : M0 non
-prouvé (rls_isolation jamais exécuté), CI jamais exécutée, migration
-login_identities volontairement non écrite (ADR-0005), question du contrat CI
-(questions-nuit n°8), ancrage de la chaîne d'audit, deux corrections de
-CLAUDE.md à proposer. CLAUDE.md porte une retouche utilisateur non commitée
-(fin de fichier) : laissée telle quelle.
+Suspens hérités du rapport du 28/07 : M0 non prouvé (→ bloc 1 en cours de
+preuve) ; contrat d'URL du test d'isolation laissé ouvert le 27 (questions
+n°8) ; canonical.py jamais exécuté ; .down.sql jamais appliqués (→ bloc 9) ;
+retouche utilisateur de CLAUDE.md (fin de fichier) toujours non commitée,
+laissée telle quelle.

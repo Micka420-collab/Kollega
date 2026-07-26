@@ -9,15 +9,17 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 ---
 
-## État réel au 27/07/2026
+## État réel au 28/07/2026
 
-`cargo test --workspace` : **142 tests, 0 échec** (sur cette machine, **sans base de données** — voir les réserves plus bas).
+`cargo test --workspace` : **142 tests, 0 échec** en local, et désormais **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
+
+**L'invariant 1 (isolation multi-tenant par RLS) est prouvé depuis le 28/07/2026** : CI run 30223145565 verte avec la politique en place, puis run 30223419721 **rouge** sur une branche jetable où la politique `tenant_isolation` avait été volontairement retirée — la preuve que le test sait échouer. La branche de sabotage a été supprimée après lecture du rouge.
 
 ### Construit et prouvé par des tests exécutés
 
 | Crate | Contenu réel |
 |---|---|
-| `kollega-core` | Types du domaine validés à la construction (`Cents(i64)`, plafond de coût, statuts de tâche…) ; assemblage de prompt à trois origines `SystemInstruction` / `UserRequest` / `ExternalContent` rendu non-confondable par les types (invariant 7), corpus hostile de 35 cas ; proptest. |
+| `kollega-core` | Types du domaine validés à la construction (`Cents(i64)`, plafond de coût, statuts de tâche…) ; assemblage de prompt à trois origines `SystemInstruction` / `UserRequest` / `ExternalContent` rendu non-confondable par les types (invariant 7), corpus hostile de 34 cas ; proptest. |
 | `kollega-audit` | Chaîne de hachage **pure** par organisation : encodage canonique injectif (spécifié dans [`docs/encodage-canonique.md`](docs/encodage-canonique.md), proptest ~4000 cas sans collision), hauteur de chaîne incluse dans les octets hachés, ancre de confiance monotone ; [modèle de menace écrit](docs/audit-modele-de-menace.md) qui dit aussi ce que la chaîne ne prouve **pas**. |
 | `kollega-policy` | Moteur de décision **pur** : refus par défaut (outil sans règle = refusé), limite dure / seuil souple distingués sur chaque borne, la limite dure gagne toujours. |
 | `kollega-runtime` | Noyau crédit + plafond **pur** : refus avant facturation, solde jamais négatif, conservation des débits, débordement `i64` traité, arrêt propre `aborted_cost_ceiling` distinct d'un échec ; machine à états d'agent pure et **reprise-compatible** (rejouer après sérialisation JSON = parcours direct, 6 scénarios). |
@@ -27,10 +29,8 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 ### Écrit mais jamais exécuté — donc non prouvé
 
-- **Le test d'isolation RLS (invariant 1)**, cœur du multi-tenant : écrit dans `kollega-store/tests/`, il exige un PostgreSQL réel, absent de la machine de développement. Tant qu'il n'a pas tourné, l'isolation entre organisations repose sur une relecture, pas sur une preuve.
-- **Les migrations de retour arrière** (`migrations/*.down.sql`, invariant 13) : écrites, jamais appliquées.
-- **La CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) : fmt → clippy → tests avec PostgreSQL+pgvector en service → image OCI → SBOM → signature cosign. Sa première exécution réelle est déclenchée par la première poussée sur ce dépôt, et c'est elle qui prouvera les deux points ci-dessus.
-- **La référence Python** de l'encodage canonique (`tools/reference/canonical.py`) : jamais confrontée à l'implémentation Rust (Python absent de la machine).
+- **Les migrations de retour arrière** (`migrations/*.down.sql`, invariant 13) : écrites, jamais appliquées. La CI actuelle ne les joue pas, et aucun chemin de descente n'existe encore dans l'outillage (`sqlx::migrate!` ne descend pas).
+- **La référence Python** de l'encodage canonique (`tools/reference/canonical.py`) : jamais confrontée à l'implémentation Rust — le runner CI a Python, le test différentiel reste à brancher.
 
 ### Pas encore construit
 
@@ -42,14 +42,14 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 | Jalon | État |
 |---|---|
-| M0 — Socle multi-tenant (RLS, rôles, CI, image) | **Construit, non prouvé** : tout est écrit, le test d'isolation n'a jamais tourné. La première CI verte clôt ce point. |
+| M0 — Socle multi-tenant (RLS, rôles, CI, image) | **Prouvé le 28/07/2026** : test d'isolation exécuté sur PostgreSQL réel en CI (run 30223145565), sensibilité démontrée (run 30223419721 rouge, politique retirée sur branche jetable), image OCI signée cosign + SBOM publiés. Reste hors preuve : les `.down.sql` (voir ci-dessus). |
 | M1 — Identité, audit, politiques | **Surface pure faite en avance** (types, chaîne d'audit, moteur de politiques, argon2id) ; la persistance PostgreSQL reste à brancher. |
 | M3 — Runtime et crédits | **Noyau pur fait en avance** (budget, machine à états) ; la concurrence sur le crédit est [spécifiée](docs/credits-concurrence.md), non implémentée. |
 | M2, M4–M7 | Non commencés. |
 
 ### Invariants — 13, état résumé
 
-**Prouvés sans réserve** : 4 (chaîne d'audit, partie pure), 7 (assemblage), 11 (core sans entrée-sortie). **Prouvés en partie** (la décision pure l'est, l'application en production dépend de la base ou d'un jalon futur) : 2, 5, 6. **Sans test aujourd'hui** : 3, 8, 9, 10, 12 (jalons non commencés) — et 1 et 13 ont des tests **écrits mais jamais exécutés**. Détail ligne par ligne : [`docs/matrice-invariants.md`](docs/matrice-invariants.md).
+**Prouvés** : **1 (isolation RLS — CI du 28/07/2026, sensibilité comprise ; la partie vectorielle attend M5)**, 4 (chaîne d'audit, partie pure), 7 (assemblage, corpus adversarial de 34 cas), 11 (core sans entrée-sortie). **Prouvés en partie** (le niveau pur l'est, l'application réelle dépend d'un jalon futur) : 2, 3, 5, 6. **Sans test aujourd'hui** : 8, 9, 10, 12 (jalons non commencés) — et **13 a des retours arrière écrits mais jamais exécutés**. Détail ligne par ligne : [`docs/matrice-invariants.md`](docs/matrice-invariants.md).
 
 ---
 

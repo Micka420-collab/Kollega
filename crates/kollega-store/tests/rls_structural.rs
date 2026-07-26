@@ -1,8 +1,7 @@
-// NON VÉRIFIÉ — nécessite une base PostgreSQL, à exécuter en CI.
-//
-// Ce test structurel n'a jamais tourné sur la machine de développement
-// (aucun PostgreSQL disponible). Sa première exécution réelle aura lieu en
-// intégration continue, où TEST_MIGRATE_DATABASE_URL est fournie.
+// EXÉCUTÉ EN CI depuis le 28/07/2026 (run 30223145565) — nécessite une base
+// PostgreSQL, fournie par la CI via TEST_MIGRATE_DATABASE_URL ; toujours
+// sauté en local si la variable est absente. La sensibilité du dispositif
+// RLS est prouvée : run 30223419721 ROUGE avec la politique retirée.
 
 //! Filet structurel de l'invariant 1 : TOUTE table tenant a sa RLS.
 //!

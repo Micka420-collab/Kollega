@@ -1,7 +1,9 @@
-# NON VÉRIFIÉ — ce pipeline n'a jamais été exécuté (aucun dépôt distant,
-# aucun runner) ; sa première exécution réelle validera : le test
-# d'isolation RLS, le filet structurel RLS, le build d'image, le SBOM et la
-# signature cosign.
+# EXÉCUTÉ depuis le 28/07/2026 : run n°1 (30223145565) verte — isolation
+# RLS sur base réelle, image, SBOM et signature cosign validés ; run n°2
+# (30223419721, branche jetable, politique RLS retirée) ROUGE — preuve que
+# le test d'isolation sait échouer. Ce que cette CI ne prouve PAS encore :
+# les migrations de retour arrière (.down.sql jamais jouées) et la
+# référence Python de l'encodage canonique (test différentiel à brancher).
 #
 # Intégration continue : fmt → clippy → tests (dont graphe de dépendances,
 # isolation RLS et filet structurel sur base réelle) → image → SBOM →
