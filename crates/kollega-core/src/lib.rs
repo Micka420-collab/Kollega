@@ -15,9 +15,11 @@
 
 pub mod identity;
 pub mod ids;
+pub mod prompt;
 
 pub use identity::{Email, EmailError, Role};
 pub use ids::{OrgId, TaskId, ToolCallId, UserId};
+pub use prompt::{AssemblyError, AssemblyLimits, CompiledDocument, CompiledPrompt};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
