@@ -14,6 +14,12 @@
 //! chaîne : la vérification relit les paramètres depuis la chaîne stockée,
 //! ce qui permettra de durcir les paramètres sans invalider l'existant.
 //!
+//! VÉRIFICATION (ADR-0006) : avec les paramètres STOCKÉS dans la chaîne,
+//! bornés par un plancher (contre le cassé) et un plafond (contre le déni de
+//! service mémoire), jamais par une liste blanche de profils ; un profil
+//! stocké différent du courant est accepté et signalé pour re-hachage à la
+//! connexion — le parc migre seul, personne n'est verrouillé.
+//!
 //! RÈGLE ABSOLUE : aucun mot de passe ni fragment de mot de passe ne sort de
 //! ces fonctions — ni dans les erreurs, ni dans les journaux. Les erreurs
 //! amont d'argon2 sont volontairement écrasées en variantes muettes.
@@ -58,26 +64,47 @@ pub fn hash_password(password: &str) -> Result<String, PasswordError> {
     Ok(hash.to_string())
 }
 
-/// Profils de coût acceptés à la VÉRIFICATION (m KiB, t, p).
+/// Bornes des paramètres acceptés à la VÉRIFICATION (ADR-0006).
 ///
-/// La vérification relit l'algorithme et les coûts depuis la chaîne stockée
-/// (comportement de la crate argon2) : sans cette liste blanche, une chaîne
-/// affaiblie (`m=8`) serait acceptée, et une chaîne gonflée (`m=4 Tio`)
-/// serait une primitive de déni de service mémoire sur le chemin de
-/// connexion. Lors d'un durcissement futur, AJOUTER le nouveau profil ici
-/// sans retirer l'ancien tant que des empreintes anciennes existent.
-const ACCEPTED_PROFILES: &[(u32, u32, u32)] = &[(MEMORY_KIB, ITERATIONS, PARALLELISM)];
+/// La liste blanche stricte de profils, essayée d'abord, était un défaut :
+/// elle ne ferme aucun chemin réel (un attaquant capable d'écrire la colonne
+/// y met un argon2id conforme d'un mot de passe qu'il connaît) et son coût
+/// était certain (durcir les paramètres sans penser à la liste = tout le
+/// parc verrouillé). Forme correcte : vérifier avec les paramètres STOCKÉS —
+/// le format PHC est auto-descriptif, c'est son intérêt — bornés par :
+/// - un PLANCHER, contre le réellement cassé (m < 8 Mio) ;
+/// - un PLAFOND, contre le déni de service (une chaîne forgée m=4 Gio ferait
+///   allouer 4 Gio à chaque tentative de connexion) — seul argument valable
+///   pour contraindre les paramètres d'une chaîne stockée.
+const MIN_MEMORY_KIB: u32 = 8_192; // 8 Mio : en dessous, c'est cassé.
+const MAX_MEMORY_KIB: u32 = 262_144; // 256 Mio : au-delà, primitive de DoS.
+const MAX_ITERATIONS: u32 = 64; // garde CPU, même logique que la mémoire.
+const MAX_PARALLELISM: u32 = 16;
 
-/// Vérifie un mot de passe contre une chaîne PHC stockée.
+/// Issue d'une vérification de mot de passe réussie à parser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasswordCheck {
+    /// Mot de passe correct, empreinte au profil courant.
+    Valid,
+    /// Mot de passe correct, mais l'empreinte n'est pas au profil courant :
+    /// re-hacher maintenant (le mot de passe en clair est disponible) et
+    /// remplacer la colonne — le parc migre tout seul à la connexion.
+    ValidNeedsRehash,
+    /// Mot de passe incorrect.
+    Invalid,
+}
+
+/// Vérifie un mot de passe contre une chaîne PHC stockée (ADR-0006).
 ///
-/// La chaîne doit être `argon2id`, version 0x13, avec un profil de coûts de
-/// la liste blanche [`ACCEPTED_PROFILES`] : tout autre algorithme
-/// (`argon2i`, `argon2d`), version ou profil est traité comme une empreinte
-/// corrompue — jamais comme une simple non-correspondance.
+/// Accepte tout argon2id v19 dont les paramètres stockés sont entre plancher
+/// et plafond ; signale [`PasswordCheck::ValidNeedsRehash`] quand le profil
+/// stocké diffère du profil courant. `Err(…)` : chaîne illisible, algorithme
+/// étranger (`argon2i`/`argon2d` — jamais produits par nous), paramètres
+/// cassés ou absurdes — une anomalie à traiter, pas un mauvais mot de passe.
 ///
-/// `Ok(true)` : correspond. `Ok(false)` : ne correspond pas. `Err(…)` : la
-/// chaîne stockée est illisible ou hors profil — une anomalie à traiter.
-pub fn verify_password(password: &str, stored_hash: &str) -> Result<bool, PasswordError> {
+/// Le contrôle des bornes précède toute vérification : une chaîne forgée
+/// m=4 Gio est refusée SANS que la mémoire demandée soit allouée.
+pub fn check_password(password: &str, stored_hash: &str) -> Result<PasswordCheck, PasswordError> {
     let parsed = PasswordHash::new(stored_hash).map_err(|_| PasswordError::InvalidStoredHash)?;
     // Une chaîne PHC sans empreinte (sel seul) est structurellement valide
     // mais inutilisable comme crédential stocké : c'est une corruption, pas
@@ -85,8 +112,8 @@ pub fn verify_password(password: &str, stored_hash: &str) -> Result<bool, Passwo
     if parsed.hash.is_none() {
         return Err(PasswordError::InvalidStoredHash);
     }
-    // Épinglage : l'algorithme, la version et les coûts relus depuis la
-    // chaîne doivent appartenir au profil figé.
+    // Cohérence de format : nous n'avons jamais produit autre chose que de
+    // l'argon2id v19 — toute autre valeur est une anomalie de données.
     if parsed.algorithm.as_str() != "argon2id" {
         return Err(PasswordError::InvalidStoredHash);
     }
@@ -94,13 +121,26 @@ pub fn verify_password(password: &str, stored_hash: &str) -> Result<bool, Passwo
         return Err(PasswordError::InvalidStoredHash);
     }
     let params = Params::try_from(&parsed).map_err(|_| PasswordError::InvalidStoredHash)?;
-    let profile = (params.m_cost(), params.t_cost(), params.p_cost());
-    if !ACCEPTED_PROFILES.contains(&profile) {
+    if params.m_cost() < MIN_MEMORY_KIB
+        || params.m_cost() > MAX_MEMORY_KIB
+        || params.t_cost() == 0
+        || params.t_cost() > MAX_ITERATIONS
+        || params.p_cost() == 0
+        || params.p_cost() > MAX_PARALLELISM
+    {
         return Err(PasswordError::InvalidStoredHash);
     }
     match hasher()?.verify_password(password.as_bytes(), &parsed) {
-        Ok(()) => Ok(true),
-        Err(argon2::password_hash::Error::Password) => Ok(false),
+        Ok(()) => {
+            let current = (MEMORY_KIB, ITERATIONS, PARALLELISM);
+            let stored = (params.m_cost(), params.t_cost(), params.p_cost());
+            if stored == current {
+                Ok(PasswordCheck::Valid)
+            } else {
+                Ok(PasswordCheck::ValidNeedsRehash)
+            }
+        }
+        Err(argon2::password_hash::Error::Password) => Ok(PasswordCheck::Invalid),
         Err(_) => Err(PasswordError::InvalidStoredHash),
     }
 }
@@ -112,19 +152,33 @@ mod tests {
     // NOTE : aucun test n'imprime ni ne journalise un mot de passe. Les
     // valeurs utilisées ici sont des constantes de test, pas des secrets.
 
+    /// Chaîne PHC réelle produite avec un profil arbitraire (pour les tests
+    /// de bornes et de re-hachage).
+    fn phc_with(algorithm: Algorithm, m: u32, t: u32, p: u32, password: &str) -> String {
+        let salt = SaltString::generate(&mut OsRng);
+        let params = Params::new(m, t, p, Some(OUTPUT_LEN)).unwrap();
+        Argon2::new(algorithm, Version::V0x13, params)
+            .hash_password(password.as_bytes(), &salt)
+            .unwrap()
+            .to_string()
+    }
+
     #[test]
     fn round_trip_accepts_correct_password() {
         let stored = hash_password("grande phrase de passe 42!").unwrap();
         assert_eq!(
-            verify_password("grande phrase de passe 42!", &stored),
-            Ok(true)
+            check_password("grande phrase de passe 42!", &stored),
+            Ok(PasswordCheck::Valid)
         );
     }
 
     #[test]
-    fn wrong_password_is_rejected_without_error() {
+    fn wrong_password_is_invalid_without_error() {
         let stored = hash_password("bon mot de passe").unwrap();
-        assert_eq!(verify_password("mauvais mot de passe", &stored), Ok(false));
+        assert_eq!(
+            check_password("mauvais mot de passe", &stored),
+            Ok(PasswordCheck::Invalid)
+        );
     }
 
     #[test]
@@ -142,8 +196,8 @@ mod tests {
         let a = hash_password("identique").unwrap();
         let b = hash_password("identique").unwrap();
         assert_ne!(a, b);
-        assert_eq!(verify_password("identique", &a), Ok(true));
-        assert_eq!(verify_password("identique", &b), Ok(true));
+        assert_eq!(check_password("identique", &a), Ok(PasswordCheck::Valid));
+        assert_eq!(check_password("identique", &b), Ok(PasswordCheck::Valid));
     }
 
     #[test]
@@ -155,7 +209,7 @@ mod tests {
             "$inconnu$v=19$abc",
         ] {
             assert_eq!(
-                verify_password("peu importe", corrupt),
+                check_password("peu importe", corrupt),
                 Err(PasswordError::InvalidStoredHash),
                 "entrée corrompue acceptée : {corrupt:?}"
             );
@@ -163,39 +217,76 @@ mod tests {
     }
 
     #[test]
-    fn downgraded_algorithm_is_rejected() {
-        // Chaîne argon2i réelle et valide : refusée à la vérification —
-        // l'algorithme est épinglé, pas relu aveuglément depuis la chaîne.
-        let salt = SaltString::generate(&mut OsRng);
-        let params = Params::new(MEMORY_KIB, ITERATIONS, PARALLELISM, Some(OUTPUT_LEN)).unwrap();
-        let weak = Argon2::new(Algorithm::Argon2i, Version::V0x13, params);
-        let phc = weak.hash_password(b"x", &salt).unwrap().to_string();
+    fn foreign_algorithm_is_an_anomaly() {
+        // Nous n'avons jamais produit d'argon2i : une telle chaîne dans la
+        // colonne est une anomalie de données, pas un compte légitime.
+        let phc = phc_with(Algorithm::Argon2i, MEMORY_KIB, ITERATIONS, PARALLELISM, "x");
         assert!(phc.starts_with("$argon2i$"));
         assert_eq!(
-            verify_password("x", &phc),
+            check_password("x", &phc),
             Err(PasswordError::InvalidStoredHash)
         );
     }
 
     #[test]
-    fn weakened_cost_profile_is_rejected() {
-        // Chaîne argon2id réelle mais m=8,t=1 : hors liste blanche, refusée
-        // — pas de rétrogradation silencieuse ni de m démesuré (DoS mémoire).
-        let salt = SaltString::generate(&mut OsRng);
-        let params = Params::new(8, 1, 1, Some(OUTPUT_LEN)).unwrap();
-        let weak = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-        let phc = weak.hash_password(b"x", &salt).unwrap().to_string();
-        assert!(phc.starts_with("$argon2id$"));
+    fn legacy_weak_profile_above_floor_is_accepted_and_flagged_for_rehash() {
+        // ADR-0006 : un ancien profil plus faible que la politique courante
+        // mais au-dessus du plancher reste accepté — et signalé pour
+        // re-hachage, afin que le parc migre seul à la connexion.
+        let phc = phc_with(Algorithm::Argon2id, 12_288, 1, 1, "ancien compte");
         assert_eq!(
-            verify_password("x", &phc),
+            check_password("ancien compte", &phc),
+            Ok(PasswordCheck::ValidNeedsRehash)
+        );
+        // Un mauvais mot de passe sur ce même profil reste Invalid, jamais
+        // « à re-hacher ».
+        assert_eq!(check_password("mauvais", &phc), Ok(PasswordCheck::Invalid));
+    }
+
+    #[test]
+    fn below_floor_is_rejected() {
+        // m=8 KiB : réellement cassé, sous le plancher documenté.
+        let phc = phc_with(Algorithm::Argon2id, 8, 1, 1, "x");
+        assert_eq!(
+            check_password("x", &phc),
             Err(PasswordError::InvalidStoredHash)
+        );
+    }
+
+    #[test]
+    fn absurd_memory_is_rejected_without_allocating() {
+        // Chaîne forgée m=4 Gio : refusée par la borne AVANT toute
+        // vérification — le test échouerait par le temps et la mémoire si
+        // l'allocation avait lieu.
+        let stored = hash_password("x").unwrap();
+        let forged = stored.replace("m=19456", "m=4194304");
+        assert!(forged.contains("m=4194304"));
+        let started = std::time::Instant::now();
+        assert_eq!(
+            check_password("x", &forged),
+            Err(PasswordError::InvalidStoredHash)
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(200),
+            "le refus doit précéder toute allocation"
+        );
+    }
+
+    #[test]
+    fn rehash_produces_current_profile() {
+        // Le re-hachage recommandé par ValidNeedsRehash produit bien le
+        // profil courant : une fois re-haché, plus de signalement.
+        let rehashed = hash_password("ancien compte").unwrap();
+        assert_eq!(
+            check_password("ancien compte", &rehashed),
+            Ok(PasswordCheck::Valid)
         );
     }
 
     #[test]
     fn errors_never_echo_the_password() {
         let secret = "SecretUnique#2026";
-        let err = verify_password(secret, "corrompu").unwrap_err();
+        let err = check_password(secret, "corrompu").unwrap_err();
         let shown = format!("{err} / {err:?}");
         assert!(!shown.contains(secret));
         assert!(!shown.to_lowercase().contains("secretunique"));
