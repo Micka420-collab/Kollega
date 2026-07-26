@@ -930,6 +930,7 @@ dependencies = [
 name = "kollega-core"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "serde",
  "serde_json",
  "thiserror",
@@ -949,6 +950,7 @@ name = "kollega-policy"
 version = "0.1.0"
 dependencies = [
  "kollega-core",
+ "proptest",
 ]
 
 [[package]]

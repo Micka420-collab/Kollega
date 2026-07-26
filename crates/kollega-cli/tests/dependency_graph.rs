@@ -16,8 +16,16 @@ use std::path::PathBuf;
 const CORE_EXTERNAL_ALLOWED: &[&str] = &["serde", "thiserror", "uuid", "time"];
 
 /// En test uniquement, le domaine peut en plus utiliser un sérialiseur concret
-/// pour verrouiller ses formes sérialisées — toujours sans entrée-sortie.
-const CORE_DEV_ALLOWED: &[&str] = &["serde", "thiserror", "uuid", "time", "serde_json"];
+/// (`serde_json`) et un framework de test de propriétés (`proptest`) — tous
+/// deux purs, sans entrée-sortie, absents de l'artefact livré.
+const CORE_DEV_ALLOWED: &[&str] = &[
+    "serde",
+    "thiserror",
+    "uuid",
+    "time",
+    "serde_json",
+    "proptest",
+];
 
 /// Arêtes internes autorisées : crate -> dépendances kollega-* permises.
 fn allowed_internal(name: &str) -> &'static [&'static str] {
