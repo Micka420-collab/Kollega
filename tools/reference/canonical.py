@@ -1,15 +1,23 @@
-# NON VÉRIFIÉ — Python absent de la machine de développement (28/07/2026).
-# Cette implémentation de référence n'a JAMAIS été exécutée ici. Elle est
-# écrite DEPUIS LA SPÉCIFICATION (docs/encodage-canonique.md), délibérément
-# sans regarder le code Rust, pour qu'un test différentiel prouve quelque
-# chose : si elle était traduite du Rust, elle en reproduirait les erreurs.
+# NON VÉRIFIÉ localement — Python absent de la machine de développement.
+# Cette implémentation de référence est écrite DEPUIS LA SPÉCIFICATION
+# (docs/encodage-canonique.md), délibérément sans regarder le code Rust,
+# pour qu'un test différentiel prouve quelque chose : si elle était
+# traduite du Rust, elle en reproduirait les erreurs.
 #
-# Rôle : encodeur canonique de référence et générateur de vecteurs, pour un
-# test différentiel Rust <-> Python (>= 10 000 vecteurs) à exécuter dès qu'un
-# interpréteur Python est disponible. Voir tools/reference/README.md.
+# Exécutée par la CI (étape différentielle ajoutée le 28/07/2026) :
+# le test Rust `diff_vectors.rs` génère >= 12 000 vecteurs d'encodage et
+# 2 000 empreintes complètes ; ce script les rejoue et la CI compare
+# octet à octet. Modes :
+#   python3 canonical.py           < vectors.jsonl  -> encodages, un par ligne
+#   python3 canonical.py --hashes  < hashes.jsonl   -> empreintes hex
 #
 # Toute divergence Rust/Python est d'abord un défaut de SPÉCIFICATION à
-# documenter, pas un bug à corriger en douce.
+# documenter, pas un bug à corriger en douce (tools/reference/README.md).
+#
+# Correction du 28/07/2026 (défaut de premier passage, trouvé par relecture
+# avant toute exécution) : le bloc __main__ précédait la définition de
+# _from_json — NameError garanti en mode script. Bloc déplacé en fin de
+# fichier ; les fonctions d'encodage et de hachage sont inchangées.
 
 from __future__ import annotations
 
@@ -102,18 +110,6 @@ def entry_hash(
     return h.hexdigest()
 
 
-if __name__ == "__main__":
-    # Mode différentiel : lit des vecteurs JSON sur stdin (un par ligne :
-    # {"value": <valeur taguée>}) et écrit l'encodage sur stdout, pour
-    # comparaison octet à octet avec la sortie Rust.
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        spec = json.loads(line)
-        print(encode(_from_json(spec["value"])))
-
-
 def _from_json(node: Any) -> Any:  # pragma: no cover - utilitaire de test
     """Reconstruit une valeur taguée depuis sa forme JSON de transport."""
     tag = node[0]
@@ -124,3 +120,41 @@ def _from_json(node: Any) -> Any:  # pragma: no cover - utilitaire de test
     if tag == "object":
         return ("object", {k: _from_json(v) for k, v in node[1].items()})
     raise ValueError(f"tag inconnu : {tag!r}")
+
+
+def _run_encode() -> None:
+    """Mode différentiel encodage : {"value": <valeur taguée>} par ligne."""
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        spec = json.loads(line)
+        print(encode(_from_json(spec["value"])))
+
+
+def _run_hashes() -> None:
+    """Mode différentiel empreintes : un enregistrement complet par ligne."""
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        spec = json.loads(line)
+        prev = bytes.fromhex(spec["prev"]) if spec["prev"] is not None else None
+        print(
+            entry_hash(
+                prev,
+                spec["action"],
+                spec["actor"],
+                spec["height"],
+                spec["org_id"],
+                _from_json(spec["payload"]),
+                spec["ts"],
+            )
+        )
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--hashes":
+        _run_hashes()
+    else:
+        _run_encode()

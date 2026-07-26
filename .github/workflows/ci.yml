@@ -48,6 +48,29 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests (graphe de dépendances + isolation RLS sur base réelle)
         run: cargo test --workspace
+      - name: Différentiel encodage canonique Rust <-> Python
+        # Deux implémentations écrites indépendamment depuis la spec ; toute
+        # divergence est un défaut de SPÉCIFICATION à documenter, pas un bug
+        # à corriger en douce (tools/reference/README.md).
+        run: |
+          # Chemin ABSOLU : cargo exécute les tests d'intégration avec la
+          # crate (pas la racine du workspace) pour répertoire courant.
+          DIFF_VECTORS_DIR="$(pwd)/target/diff" cargo test -p kollega-audit --test diff_vectors
+          python3 tools/reference/canonical.py < target/diff/vectors.jsonl > target/diff/py.out
+          python3 tools/reference/canonical.py --hashes < target/diff/hashes.jsonl > target/diff/py-hashes.out
+          if ! diff -u target/diff/rust.out target/diff/py.out > target/diff/delta.txt; then
+            echo "DIVERGENCE D'ENCODAGE Rust/Python — premières lignes :"
+            head -c 2000 target/diff/delta.txt
+            exit 1
+          fi
+          if ! diff -u target/diff/rust-hashes.out target/diff/py-hashes.out > target/diff/delta-hashes.txt; then
+            echo "DIVERGENCE D'EMPREINTE Rust/Python — premières lignes :"
+            head -c 2000 target/diff/delta-hashes.txt
+            exit 1
+          fi
+          echo "encodages compares : $(wc -l < target/diff/rust.out)"
+          echo "empreintes comparees : $(wc -l < target/diff/rust-hashes.out)"
+          test "$(wc -l < target/diff/rust.out)" -ge 12000
 
   image:
     needs: verifications

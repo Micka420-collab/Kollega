@@ -906,6 +906,7 @@ dependencies = [
  "hex",
  "kollega-core",
  "proptest",
+ "serde_json",
  "sha2",
  "thiserror",
  "uuid",
