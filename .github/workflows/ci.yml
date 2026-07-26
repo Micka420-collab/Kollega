@@ -122,7 +122,12 @@ jobs:
             fi
           }
           snapshot() {
-            capture "pg_dump ($1)" pg_dump --schema-only --no-owner --no-privileges -f "$1.schema"
+            capture "pg_dump ($1)" pg_dump --schema-only --no-owner --no-privileges -f "$1.schema.raw"
+            # pg_dump >= 18 émet \restrict/\unrestrict avec un jeton
+            # ALÉATOIRE par invocation : du bruit, pas du schéma — filtré
+            # (faux positif attrapé aux runs 10-14, diagnostic sur la
+            # branche ci-diagnostic).
+            grep -v -E '^\\(un)?restrict ' "$1.schema.raw" > "$1.schema" || true
             # pg_dump ne couvre ni les rôles, ni les extensions, ni les
             # privilèges de schéma : capturés à part.
             capture "roles ($1)" psql -Atc "SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE 'kollega%' ORDER BY rolname" -o "$1.roles"
