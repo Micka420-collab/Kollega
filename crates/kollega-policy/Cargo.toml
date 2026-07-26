@@ -6,6 +6,7 @@ description = "Moteur de décision sur les appels d'outils — partie pure (inva
 
 [dependencies]
 kollega-core = { path = "../kollega-core" }
+thiserror.workspace = true
 
 [dev-dependencies]
 proptest = "1"

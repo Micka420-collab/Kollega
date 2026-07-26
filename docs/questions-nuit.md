@@ -29,7 +29,19 @@ Choix réversibles pris seul :
    hachage inchangées octet pour octet — ce n'est PAS une divergence de
    spécification, c'est un défaut d'ordre de définition. Un mode
    `--hashes` a été ajouté pour le différentiel d'empreintes complètes.
-6. **Bloc 2 — j'ai appliqué le confinement jusqu'au bout, deux crans plus
+6. **Bloc 4 — deux décisions dans la marge du brief.** (a) Le constructeur
+   « souple seul » (validation sans limite dure au-dessus) n'existe plus :
+   champs privés, `hard(limite)` ou `two_tier(seuil, limite)` seulement —
+   c'est l'esprit du brief (« une même borne porte DEUX niveaux ») poussé
+   dans le type. (b) Les chemins restent à UN niveau (dedans/dehors, pas
+   d'ordre → pas d'« entre les deux ») ; en revanche j'ai fermé le
+   fail-open du préfixe vide : `""`/`"/"` dans une liste n'« autorise plus
+   tout », c'est un refus de règle malformée — l'accès universel légitime
+   se déclare en omettant la restriction de chemins. Si tu veux un jour un
+   vrai deux-étages spatial (libre dans X, validation dans Y, refus
+   ailleurs), c'est exprimable par deux listes de préfixes — non construit,
+   rien ne le demande.
+7. **Bloc 2 — j'ai appliqué le confinement jusqu'au bout, deux crans plus
    loin que la lettre du brief** : la normalisation `\r\n`→`\n` et le
    marqueur de troncature injecté dans le contenu étaient aussi des
    modifications — supprimés (le drapeau `truncated` porte l'information),

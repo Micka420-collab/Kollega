@@ -6,27 +6,34 @@
 //!
 //! Sémantique, décidée et FIGÉE ici :
 //! - **Refus par défaut** : un outil sans règle explicite est refusé.
-//! - **Chaque borne porte son mode**, explicitement ([`Bound`],
-//!   [`PathBound`]) : une **limite dure** (`ExceedMode::Deny`) ne doit
-//!   jamais être franchie, aucune validation ne l'autorise → refus ; un
-//!   **seuil souple** (`ExceedMode::RequireApproval`) marque l'inhabituel
-//!   qui mérite un humain → validation requise. C'est la promesse du
-//!   produit : un dépassement de seuil est porté devant le dirigeant, pas
-//!   tué en silence.
-//! - **Au seuil exact = autorisé ; au-delà = le mode de la borne joue.** La
-//!   comparaison est strictement supérieure, comme pour le plafond de coût.
-//! - **Une limite dure l'emporte toujours** : si un appel viole à la fois
-//!   une borne dure et une borne souple, l'issue est le refus.
+//! - **Chaque borne scalaire porte DEUX niveaux** ([`Bound`], bloc 4) : un
+//!   **seuil de validation** et une **limite dure** au-dessus. En dessous ou
+//!   au seuil : conforme. Entre les deux : validation humaine. Au-delà de la
+//!   limite : refus, **quelle que soit la validation** — un agent qui veut
+//!   écrire à 500 destinataires au lieu de 10 ne part plus en validation
+//!   qu'un dirigeant pressé tamponnerait : il est refusé. Le « souple sans
+//!   plafond » n'est plus constructible ; la limite dure est toujours là.
+//! - **Aux bornes exactes = le niveau inférieur** : au seuil exact →
+//!   conforme ; à la limite exacte → validation (ou conforme sans seuil).
+//!   La comparaison est strictement supérieure, comme le plafond de coût.
+//! - **Les chemins restent à UN niveau** ([`PathBound`], mode explicite) :
+//!   un chemin est dedans ou dehors, il n'y a pas de « à quel point
+//!   dehors » — donc pas de deux-étages possible sans inventer un ordre.
+//! - **Une limite dure l'emporte toujours** : si un appel franchit à la fois
+//!   une limite dure et un seuil de validation, l'issue est le refus.
 //! - **Fermé par défaut sur l'inconnu, en dur** : valeur non déclarée sous
 //!   une borne (montant, destinataires, chemins), chemin contenant `\`
-//!   (séparateur ambigu selon la cible) ou une traversée `..` → refus,
-//!   quel que soit le mode de la borne — ce sont des violations de
-//!   protocole, pas des exceptions métier qu'un humain peut arbitrer.
-//! - Toute issue porte une raison lisible qui dit QUEL mode a joué, jamais
-//!   vide : c'est le futur `tool_calls.decision_reason`.
+//!   (séparateur ambigu selon la cible), traversée `..`, ou règle de
+//!   chemins portant un préfixe VIDE (`""`/`"/"` — l'ex-« couvre tout »,
+//!   un fail-open qu'une ligne de table mal remplie déclenchait) → refus —
+//!   ce sont des violations de protocole, pas des exceptions métier.
+//!   L'accès universel légitime s'exprime en ne posant PAS de `PathBound`.
+//! - Toute issue porte une raison lisible qui dit QUEL niveau a joué,
+//!   jamais vide : c'est le futur `tool_calls.decision_reason`.
 //!
 //! Défauts recommandés par type de borne (documentés, surchargeables champ
-//! par champ) : montant → souple, destinataires → souple, chemins → dur.
+//! par champ) : montant et destinataires → deux étages
+//! ([`Bound::two_tier`]) ; chemins → dur.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -46,7 +53,10 @@ pub struct ToolCallRequest {
     pub paths: Vec<String>,
 }
 
-/// Ce qui se produit quand une borne est franchie.
+/// Ce qui se produit quand une restriction de chemins est franchie.
+///
+/// Ne s'applique QU'AUX chemins : les bornes scalaires portent leurs deux
+/// niveaux dans [`Bound`] directement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExceedMode {
     /// Limite dure : ne doit jamais arriver, aucune validation ne
@@ -57,29 +67,84 @@ pub enum ExceedMode {
     RequireApproval,
 }
 
-/// Borne scalaire (montant, destinataires) avec son mode, explicite.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Bound<T> {
-    /// Valeur maximale autorisée (incluse).
-    pub max: T,
-    /// Mode au franchissement — pas de défaut implicite.
-    pub on_exceed: ExceedMode,
+/// Erreur de construction d'une borne à deux étages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum BoundError {
+    /// Le seuil de validation dépasse la limite dure : la bande de
+    /// validation serait négative, la règle ne veut rien dire.
+    #[error("seuil de validation au-dessus de la limite dure")]
+    ThresholdAboveHardLimit,
 }
 
-impl<T> Bound<T> {
-    /// Limite dure : franchie → refus.
-    pub const fn hard(max: T) -> Self {
+/// Borne scalaire à DEUX niveaux (montant, destinataires) — bloc 4.
+///
+/// Un seuil de validation, et une limite dure au-dessus. En dessous ou au
+/// seuil : conforme. Entre les deux : validation humaine. Au-delà de la
+/// limite : refus, quelle que soit la validation. Champs privés : une borne
+/// dont le seuil dépasserait la limite n'est pas représentable, et une
+/// borne SANS limite dure ne l'est pas non plus — le « souple sans
+/// plafond » (validation à l'infini, que le dirigeant tamponne) était le
+/// mode de défaillance que cette structure ferme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bound<T> {
+    /// Seuil de validation (inclus). `None` = pas de bande de validation.
+    approval_threshold: Option<T>,
+    /// Limite dure (incluse) : au-delà, refus. Toujours présente.
+    hard_limit: T,
+}
+
+/// Niveau atteint par une valeur face à une borne à deux étages.
+enum Tier {
+    Within,
+    NeedsApproval,
+    BeyondHardLimit,
+}
+
+impl<T: PartialOrd + Copy> Bound<T> {
+    /// Limite dure seule : conforme jusqu'à la limite (incluse), refus
+    /// au-delà — pas de bande de validation.
+    pub const fn hard(hard_limit: T) -> Self {
         Bound {
-            max,
-            on_exceed: ExceedMode::Deny,
+            approval_threshold: None,
+            hard_limit,
         }
     }
 
-    /// Seuil souple : franchi → validation humaine.
-    pub const fn soft(max: T) -> Self {
-        Bound {
-            max,
-            on_exceed: ExceedMode::RequireApproval,
+    /// Deux étages : conforme jusqu'au seuil (inclus), validation humaine
+    /// du seuil (exclu) à la limite (incluse), refus au-delà. Exige
+    /// `approval_threshold <= hard_limit`. Un seuil égal à la limite donne
+    /// une bande vide — équivalent à [`Bound::hard`], accepté.
+    pub fn two_tier(approval_threshold: T, hard_limit: T) -> Result<Self, BoundError> {
+        if approval_threshold > hard_limit {
+            return Err(BoundError::ThresholdAboveHardLimit);
+        }
+        Ok(Bound {
+            approval_threshold: Some(approval_threshold),
+            hard_limit,
+        })
+    }
+
+    /// La limite dure (incluse).
+    pub const fn hard_limit(&self) -> T {
+        self.hard_limit
+    }
+
+    /// Le seuil de validation (inclus), s'il y a une bande de validation.
+    pub const fn approval_threshold(&self) -> Option<T> {
+        self.approval_threshold
+    }
+
+    /// Niveau atteint par `value`.
+    fn tier(&self, value: T) -> Tier {
+        if value > self.hard_limit {
+            Tier::BeyondHardLimit
+        } else if self
+            .approval_threshold
+            .is_some_and(|threshold| value > threshold)
+        {
+            Tier::NeedsApproval
+        } else {
+            Tier::Within
         }
     }
 }
@@ -130,10 +195,11 @@ pub struct ToolRule {
     /// Vrai = toute exécution DANS les bornes passe quand même par une
     /// validation humaine.
     pub requires_approval: bool,
-    /// Borne de montant. `None` = pas de borne. Défaut recommandé : souple.
+    /// Borne de montant. `None` = pas de borne. Défaut recommandé : deux
+    /// étages ([`Bound::two_tier`]).
     pub amount: Option<Bound<Cents>>,
     /// Borne de destinataires. `None` = pas de borne. Défaut recommandé :
-    /// souple.
+    /// deux étages ([`Bound::two_tier`]).
     pub recipients: Option<Bound<u32>>,
     /// Restriction de chemins. `None` = pas de restriction. Défaut
     /// recommandé : dure.
@@ -180,12 +246,17 @@ impl Evaluation {
 }
 
 /// Vrai si `path` est couvert par `prefix`, au sens des segments.
+///
+/// Un préfixe vide ne couvre RIEN : l'ex-sémantique « vide couvre tout »
+/// était l'unique fail-open du moteur (une chaîne vide issue d'un
+/// formulaire ou d'une ligne de table mal remplie transformait une
+/// restriction dure en autorisation totale). Une règle qui porte un
+/// préfixe vide est refusée en amont comme violation de protocole ; ici,
+/// défense en profondeur : il ne couvre rien.
 fn path_is_under(path: &str, prefix: &str) -> bool {
     let prefix = prefix.trim_end_matches('/');
     if prefix.is_empty() {
-        // Un préfixe vide ou « / » couvre tout : à réserver aux règles
-        // volontairement larges.
-        return true;
+        return false;
     }
     path == prefix
         || path
@@ -235,32 +306,38 @@ pub fn decide(rules: &[ToolRule], request: &ToolCallRequest) -> Evaluation {
         }
     };
 
-    // Montant. Valeur non déclarée sous une borne : refus, quel que soit le
-    // mode — violation de protocole, pas exception métier.
+    // Montant. Valeur non déclarée sous une borne : refus — violation de
+    // protocole, pas exception métier.
     if let Some(bound) = &rule.amount {
         match request.amount {
             None => {
                 return Evaluation::deny(format!(
-                    "l'outil {tool} est borné en montant ({} centimes) mais l'appel ne déclare aucun montant",
-                    bound.max.0
+                    "l'outil {tool} est borné en montant ({} centimes de limite dure) mais l'appel ne déclare aucun montant",
+                    bound.hard_limit().0
                 ));
             }
-            Some(amount) if amount > bound.max => {
-                let exceeded = match bound.on_exceed {
-                    ExceedMode::Deny => Violation::Hard(format!(
-                        "limite dure dépassée : montant {} centimes > {} centimes pour l'outil {tool} — refus",
-                        amount.0, bound.max.0
-                    )),
-                    ExceedMode::RequireApproval => Violation::Soft(format!(
-                        "seuil souple franchi : montant {} centimes > {} centimes pour l'outil {tool} — validation requise",
-                        amount.0, bound.max.0
-                    )),
+            Some(amount) => {
+                let violation = match bound.tier(amount) {
+                    Tier::Within => None,
+                    Tier::BeyondHardLimit => Some(Violation::Hard(format!(
+                        "limite dure dépassée : montant {} centimes > {} centimes pour l'outil {tool} — refus, aucune validation ne l'autorise",
+                        amount.0,
+                        bound.hard_limit().0
+                    ))),
+                    Tier::NeedsApproval => Some(Violation::Soft(format!(
+                        "seuil de validation franchi : montant {} centimes > {} centimes (limite dure à {} centimes) pour l'outil {tool} — validation requise",
+                        amount.0,
+                        bound
+                            .approval_threshold()
+                            .map(|threshold| threshold.0)
+                            .unwrap_or(bound.hard_limit().0),
+                        bound.hard_limit().0
+                    ))),
                 };
-                if let Some(denied) = record(exceeded) {
+                if let Some(denied) = violation.and_then(&mut record) {
                     return denied;
                 }
             }
-            Some(_) => {}
         }
     }
 
@@ -269,32 +346,46 @@ pub fn decide(rules: &[ToolRule], request: &ToolCallRequest) -> Evaluation {
         match request.recipient_count {
             None => {
                 return Evaluation::deny(format!(
-                    "l'outil {tool} est borné à {} destinataires mais l'appel n'en déclare aucun",
-                    bound.max
+                    "l'outil {tool} est borné à {} destinataires (limite dure) mais l'appel n'en déclare aucun",
+                    bound.hard_limit()
                 ));
             }
-            Some(count) if count > bound.max => {
-                let exceeded = match bound.on_exceed {
-                    ExceedMode::Deny => Violation::Hard(format!(
-                        "limite dure dépassée : {count} destinataires > {} pour l'outil {tool} — refus",
-                        bound.max
-                    )),
-                    ExceedMode::RequireApproval => Violation::Soft(format!(
-                        "seuil souple franchi : {count} destinataires > {} pour l'outil {tool} — validation requise",
-                        bound.max
-                    )),
+            Some(count) => {
+                let violation = match bound.tier(count) {
+                    Tier::Within => None,
+                    Tier::BeyondHardLimit => Some(Violation::Hard(format!(
+                        "limite dure dépassée : {count} destinataires > {} pour l'outil {tool} — refus, aucune validation ne l'autorise",
+                        bound.hard_limit()
+                    ))),
+                    Tier::NeedsApproval => Some(Violation::Soft(format!(
+                        "seuil de validation franchi : {count} destinataires > {} (limite dure à {}) pour l'outil {tool} — validation requise",
+                        bound.approval_threshold().unwrap_or(bound.hard_limit()),
+                        bound.hard_limit()
+                    ))),
                 };
-                if let Some(denied) = record(exceeded) {
+                if let Some(denied) = violation.and_then(&mut record) {
                     return denied;
                 }
             }
-            Some(_) => {}
         }
     }
 
     // Chemins. Les violations de protocole (aucun chemin déclaré, `\`,
-    // `..`) sont des refus quel que soit le mode de la borne.
+    // `..`, règle au préfixe vide) sont des refus quel que soit le mode de
+    // la borne.
     if let Some(path_bound) = &rule.paths {
+        if path_bound
+            .allowed_prefixes
+            .iter()
+            .any(|prefix| prefix.trim_end_matches('/').is_empty())
+        {
+            // Fermé par défaut sur la règle malformée : un préfixe vide
+            // (`""`, `"/"`) autorisait TOUT — l'accès universel légitime
+            // s'exprime en ne posant pas de restriction de chemins du tout.
+            return Evaluation::deny(format!(
+                "règle de chemins invalide pour l'outil {tool} : préfixe vide interdit (l'accès universel se déclare en omettant la restriction)"
+            ));
+        }
         if request.paths.is_empty() {
             return Evaluation::deny(format!(
                 "l'outil {tool} est restreint par chemins mais l'appel n'en déclare aucun"
@@ -406,91 +497,112 @@ mod tests {
         assert!(evaluation.reason.contains("interdit"));
     }
 
-    // -- Montant : chaque mode, sous / au / au-delà -------------------------
+    // -- Montant : les trois zones, et la limite dure seule ------------------
 
     #[test]
-    fn amount_bound_table_both_modes() {
-        for (mode, above_is_denied) in [
-            (ExceedMode::Deny, true),
-            (ExceedMode::RequireApproval, false),
-        ] {
-            let mut r = rule("paiement");
-            r.amount = Some(Bound {
-                max: Cents(10_000),
-                on_exceed: mode,
-            });
-            let rules = [r];
-            // Sous et AU seuil : autorisé dans les deux modes.
-            for amount in [Cents(9_999), Cents(10_000)] {
-                let mut req = request("paiement");
-                req.amount = Some(amount);
-                let evaluation = decide(&rules, &req);
-                assert!(
-                    matches!(evaluation.decision, Decision::Allow),
-                    "mode {mode:?}, montant {amount:?} : {evaluation:?}"
-                );
-            }
-            // Au-delà : le mode de la borne joue.
+    fn amount_two_tier_has_three_zones() {
+        let mut r = rule("paiement");
+        r.amount = Some(Bound::two_tier(Cents(10_000), Cents(50_000)).unwrap());
+        let rules = [r];
+        // Sous et AU seuil : conforme.
+        for amount in [Cents(9_999), Cents(10_000)] {
             let mut req = request("paiement");
-            req.amount = Some(Cents(10_001));
-            let evaluation = decide(&rules, &req);
-            if above_is_denied {
-                assert_denied(&evaluation);
-                assert!(evaluation.reason.contains("limite dure"));
-            } else {
-                assert_approval(&evaluation);
-                assert!(evaluation.reason.contains("seuil souple"));
-            }
+            req.amount = Some(amount);
+            assert!(
+                matches!(decide(&rules, &req).decision, Decision::Allow),
+                "montant {amount:?}"
+            );
         }
+        // Entre seuil et limite (limite incluse) : validation humaine.
+        for amount in [Cents(10_001), Cents(50_000)] {
+            let mut req = request("paiement");
+            req.amount = Some(amount);
+            let evaluation = decide(&rules, &req);
+            assert_approval(&evaluation);
+            assert!(
+                evaluation.reason.contains("seuil de validation"),
+                "la raison doit nommer le niveau : {evaluation:?}"
+            );
+        }
+        // Au-delà de la limite : refus, quelle que soit la validation.
+        let mut req = request("paiement");
+        req.amount = Some(Cents(50_001));
+        let evaluation = decide(&rules, &req);
+        assert_denied(&evaluation);
+        assert!(evaluation.reason.contains("limite dure"));
+        assert!(evaluation.reason.contains("aucune validation"));
     }
 
     #[test]
-    fn undeclared_amount_is_denied_even_with_soft_bound() {
-        // Violation de protocole : refus, même si la borne est souple.
+    fn amount_hard_only_has_two_zones() {
         let mut r = rule("paiement");
-        r.amount = Some(Bound::soft(Cents(10_000)));
+        r.amount = Some(Bound::hard(Cents(10_000)));
+        let rules = [r];
+        let mut req = request("paiement");
+        req.amount = Some(Cents(10_000));
+        assert!(matches!(decide(&rules, &req).decision, Decision::Allow));
+        let mut req = request("paiement");
+        req.amount = Some(Cents(10_001));
+        assert_denied(&decide(&rules, &req));
+    }
+
+    #[test]
+    fn two_tier_rejects_threshold_above_hard_limit() {
+        assert_eq!(
+            Bound::two_tier(Cents(11), Cents(10)),
+            Err(BoundError::ThresholdAboveHardLimit)
+        );
+        // Seuil == limite : bande vide, accepté — équivalent au dur.
+        let degenerate = Bound::two_tier(5u32, 5u32).unwrap();
+        assert_eq!(degenerate.approval_threshold(), Some(5));
+        assert_eq!(degenerate.hard_limit(), 5);
+    }
+
+    #[test]
+    fn undeclared_amount_is_denied_even_with_approval_band() {
+        // Violation de protocole : refus, même avec bande de validation.
+        let mut r = rule("paiement");
+        r.amount = Some(Bound::two_tier(Cents(10_000), Cents(50_000)).unwrap());
         let evaluation = decide(&[r], &request("paiement"));
         assert_denied(&evaluation);
         assert!(evaluation.reason.contains("aucun montant"));
     }
 
-    // -- Destinataires ------------------------------------------------------
+    // -- Destinataires : le cas du brief (10 en libre, 500 en dur) -----------
 
     #[test]
-    fn recipient_bound_table_both_modes() {
-        for (mode, above_is_denied) in [
-            (ExceedMode::Deny, true),
-            (ExceedMode::RequireApproval, false),
-        ] {
-            let mut r = rule("mail.send");
-            r.recipients = Some(Bound {
-                max: 5,
-                on_exceed: mode,
-            });
-            let rules = [r];
-            for count in [4, 5] {
-                let mut req = request("mail.send");
-                req.recipient_count = Some(count);
-                assert!(
-                    matches!(decide(&rules, &req).decision, Decision::Allow),
-                    "mode {mode:?}, {count} destinataires"
-                );
-            }
+    fn recipient_two_tier_stops_the_500_mail_blast() {
+        // « un agent voulant écrire à 500 destinataires au lieu de 10 part
+        // en validation ; si le dirigeant tamponne sans lire, les 500 mails
+        // partent » — plus maintenant : au-dessus de la limite dure, refus,
+        // aucune validation ne l'autorise.
+        let mut r = rule("mail.send");
+        r.recipients = Some(Bound::two_tier(10u32, 100).unwrap());
+        let rules = [r];
+        for count in [9, 10] {
             let mut req = request("mail.send");
-            req.recipient_count = Some(6);
-            let evaluation = decide(&rules, &req);
-            if above_is_denied {
-                assert_denied(&evaluation);
-            } else {
-                assert_approval(&evaluation);
-            }
+            req.recipient_count = Some(count);
+            assert!(
+                matches!(decide(&rules, &req).decision, Decision::Allow),
+                "{count} destinataires"
+            );
         }
+        for count in [11, 100] {
+            let mut req = request("mail.send");
+            req.recipient_count = Some(count);
+            assert_approval(&decide(&rules, &req));
+        }
+        let mut req = request("mail.send");
+        req.recipient_count = Some(500);
+        let evaluation = decide(&rules, &req);
+        assert_denied(&evaluation);
+        assert!(evaluation.reason.contains("limite dure"));
     }
 
     #[test]
-    fn undeclared_recipients_are_denied_even_with_soft_bound() {
+    fn undeclared_recipients_are_denied_even_with_approval_band() {
         let mut r = rule("mail.send");
-        r.recipients = Some(Bound::soft(5));
+        r.recipients = Some(Bound::two_tier(5u32, 50).unwrap());
         assert_denied(&decide(&[r], &request("mail.send")));
     }
 
@@ -567,6 +679,32 @@ mod tests {
     }
 
     #[test]
+    fn empty_prefix_in_list_is_a_protocol_violation_not_a_wildcard() {
+        // L'ex-fail-open : un préfixe vide (ou « / », ou « // ») couvrait
+        // TOUT — une ligne de table mal remplie transformait une
+        // restriction dure en autorisation totale. Désormais : refus de la
+        // règle malformée, quel que soit le chemin demandé et le mode.
+        for bad_prefix in ["", "/", "//"] {
+            for path_bound in [
+                PathBound::hard(vec![bad_prefix.to_owned()]),
+                PathBound::soft(vec![bad_prefix.to_owned()]),
+                PathBound::hard(vec!["/data".to_owned(), bad_prefix.to_owned()]),
+            ] {
+                let mut r = rule("doc.write");
+                r.paths = Some(path_bound);
+                let mut req = request("doc.write");
+                req.paths = vec!["/data/ok.txt".to_owned()];
+                let evaluation = decide(&[r], &req);
+                assert_denied(&evaluation);
+                assert!(
+                    evaluation.reason.contains("préfixe vide"),
+                    "préfixe {bad_prefix:?} : {evaluation:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn one_bad_path_among_good_ones_applies_the_mode() {
         let mut r = rule("doc.write");
         r.paths = Some(PathBound::hard(vec!["/data".to_owned()]));
@@ -586,10 +724,11 @@ mod tests {
     // -- Combinaisons de modes ----------------------------------------------
 
     #[test]
-    fn hard_violation_wins_over_soft_violation() {
-        // Montant souple franchi ET destinataires durs dépassés : refus.
+    fn hard_violation_wins_over_approval_band() {
+        // Bande de validation du montant franchie ET limite dure des
+        // destinataires dépassée : refus.
         let mut r = rule("mail.send");
-        r.amount = Some(Bound::soft(Cents(100)));
+        r.amount = Some(Bound::two_tier(Cents(100), Cents(1_000)).unwrap());
         r.recipients = Some(Bound::hard(5));
         let mut req = request("mail.send");
         req.amount = Some(Cents(200));
@@ -600,10 +739,10 @@ mod tests {
     }
 
     #[test]
-    fn multiple_soft_violations_merge_into_one_approval() {
+    fn multiple_approval_bands_merge_into_one_approval() {
         let mut r = rule("mail.send");
-        r.amount = Some(Bound::soft(Cents(100)));
-        r.recipients = Some(Bound::soft(5));
+        r.amount = Some(Bound::two_tier(Cents(100), Cents(1_000)).unwrap());
+        r.recipients = Some(Bound::two_tier(5u32, 50).unwrap());
         let mut req = request("mail.send");
         req.amount = Some(Cents(200));
         req.recipient_count = Some(8);
@@ -619,7 +758,7 @@ mod tests {
     fn requires_approval_after_bounds_pass() {
         let mut r = rule("mail.send");
         r.requires_approval = true;
-        r.recipients = Some(Bound::soft(5));
+        r.recipients = Some(Bound::two_tier(5u32, 50).unwrap());
         let mut req = request("mail.send");
         req.recipient_count = Some(3);
         let evaluation = decide(&[r], &req);
@@ -663,20 +802,23 @@ mod tests {
     }
 
     #[test]
-    fn reasons_name_the_mode_that_played() {
-        let mut hard = rule("dur");
-        hard.amount = Some(Bound::hard(Cents(10)));
-        let mut soft = rule("souple");
-        soft.amount = Some(Bound::soft(Cents(10)));
-        let rules = [hard, soft];
+    fn reasons_name_the_tier_that_played() {
+        let mut r = rule("paiement");
+        r.amount = Some(Bound::two_tier(Cents(10), Cents(100)).unwrap());
+        let rules = [r];
 
-        let mut req = request("dur");
+        // Dans la bande : la raison nomme le seuil de validation ET rappelle
+        // la limite dure, pour que le dirigeant sache ce qu'il arbitre.
+        let mut req = request("paiement");
         req.amount = Some(Cents(11));
-        assert!(decide(&rules, &req).reason.contains("limite dure"));
+        let reason = decide(&rules, &req).reason;
+        assert!(reason.contains("seuil de validation"));
+        assert!(reason.contains("limite dure"));
 
-        let mut req = request("souple");
-        req.amount = Some(Cents(11));
-        assert!(decide(&rules, &req).reason.contains("seuil souple"));
+        // Au-delà : la raison nomme la limite dure.
+        let mut req = request("paiement");
+        req.amount = Some(Cents(101));
+        assert!(decide(&rules, &req).reason.contains("limite dure dépassée"));
     }
 
     #[test]

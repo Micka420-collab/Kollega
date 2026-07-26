@@ -1,38 +1,57 @@
 //! Propriétés générales du moteur de politiques (BLOC 8).
 
 use kollega_core::{Cents, Decision};
-use kollega_policy::{decide, Bound, ExceedMode, PathBound, ToolCallRequest, ToolRule};
+use kollega_policy::{decide, Bound, PathBound, ToolCallRequest, ToolRule};
 use proptest::prelude::*;
+
+/// Borne de montant valide : dure seule, ou deux étages (seuil ≤ limite,
+/// garanti par construction du générateur).
+fn amount_bound_strategy() -> impl Strategy<Value = Bound<Cents>> {
+    (
+        0i64..1_000_000,
+        proptest::option::of(any::<proptest::sample::Index>()),
+    )
+        .prop_map(|(hard, threshold_pick)| match threshold_pick {
+            None => Bound::hard(Cents(hard)),
+            Some(index) => {
+                let threshold = index.index(hard as usize + 1) as i64;
+                Bound::two_tier(Cents(threshold), Cents(hard))
+                    .expect("seuil borné par la limite, par construction")
+            }
+        })
+}
+
+/// Borne de destinataires valide, même construction.
+fn recipient_bound_strategy() -> impl Strategy<Value = Bound<u32>> {
+    (
+        0u32..1000,
+        proptest::option::of(any::<proptest::sample::Index>()),
+    )
+        .prop_map(|(hard, threshold_pick)| match threshold_pick {
+            None => Bound::hard(hard),
+            Some(index) => {
+                let threshold = index.index(hard as usize + 1) as u32;
+                Bound::two_tier(threshold, hard)
+                    .expect("seuil borné par la limite, par construction")
+            }
+        })
+}
 
 fn rule_strategy() -> impl Strategy<Value = ToolRule> {
     (
         "[a-z.]{1,10}",
         any::<bool>(),
         any::<bool>(),
-        proptest::option::of((0i64..1_000_000, any::<bool>())),
-        proptest::option::of((0u32..1000, any::<bool>())),
+        proptest::option::of(amount_bound_strategy()),
+        proptest::option::of(recipient_bound_strategy()),
     )
         .prop_map(
             |(tool_name, allowed, requires_approval, amount, recipients)| ToolRule {
                 tool_name,
                 allowed,
                 requires_approval,
-                amount: amount.map(|(m, hard)| Bound {
-                    max: Cents(m),
-                    on_exceed: if hard {
-                        ExceedMode::Deny
-                    } else {
-                        ExceedMode::RequireApproval
-                    },
-                }),
-                recipients: recipients.map(|(m, hard)| Bound {
-                    max: m,
-                    on_exceed: if hard {
-                        ExceedMode::Deny
-                    } else {
-                        ExceedMode::RequireApproval
-                    },
-                }),
+                amount,
+                recipients,
                 paths: None,
             },
         )
@@ -102,6 +121,34 @@ proptest! {
             extended.extend(extra);
             prop_assert_eq!(before, decide(&extended, &req));
         }
+    }
+
+    /// Bloc 4 — la propriété du produit : AU-DELÀ de la limite dure d'un
+    /// montant, l'issue est un REFUS, jamais une validation — quel que soit
+    /// le drapeau `requires_approval` et quelle que soit la bande de
+    /// validation. Aucun tampon du dirigeant ne fait partir l'appel.
+    #[test]
+    fn beyond_hard_limit_is_always_denied_never_approvable(
+        bound in amount_bound_strategy(),
+        requires_approval in any::<bool>(),
+        excess in 1i64..1_000_000,
+    ) {
+        let rule = ToolRule {
+            tool_name: "outil".to_owned(),
+            allowed: true,
+            requires_approval,
+            amount: Some(bound),
+            recipients: None,
+            paths: None,
+        };
+        let req = ToolCallRequest {
+            tool_name: "outil".to_owned(),
+            amount: Some(Cents(bound.hard_limit().0 + excess)),
+            recipient_count: None,
+            paths: Vec::new(),
+        };
+        let denied = matches!(decide(&[rule], &req).decision, Decision::Deny { .. });
+        prop_assert!(denied);
     }
 }
 
