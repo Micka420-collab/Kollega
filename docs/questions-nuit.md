@@ -29,6 +29,18 @@ Choix réversibles pris seul :
    hachage inchangées octet pour octet — ce n'est PAS une divergence de
    spécification, c'est un défaut d'ordre de définition. Un mode
    `--hashes` a été ajouté pour le différentiel d'empreintes complètes.
+6. **Bloc 2 — j'ai appliqué le confinement jusqu'au bout, deux crans plus
+   loin que la lettre du brief** : la normalisation `\r\n`→`\n` et le
+   marqueur de troncature injecté dans le contenu étaient aussi des
+   modifications — supprimés (le drapeau `truncated` porte l'information),
+   et le champ `neutralized` retiré du type (rien ne le consomme encore,
+   la forme sérialisée était libre). Pas de désaccord sur le fond, mais
+   une conséquence à ne pas perdre : la neutralisation protégeait AUSSI ce
+   que le dirigeant LIT à la validation (un bidi peut inverser
+   l'affichage). Ce devoir est transféré à la couche de présentation (M6 :
+   isolation bidi au rendu, invisibles rendus visibles à l'affichage) —
+   c'est écrit dans le modèle de menace v2 et dans la section M6, à ne pas
+   laisser tomber au moment de l'interface.
 
 ## Session du 28/07/2026 (choix réversibles pris seul)
 

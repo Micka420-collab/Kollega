@@ -1,6 +1,8 @@
 //! Propriétés générales de la surface pure de `kollega-core` (BLOC 8).
 
-use kollega_core::{Cents, Email};
+use kollega_core::{
+    prompt::compile, AssemblyLimits, Cents, Classification, Email, Segment, SourceRef,
+};
 use proptest::prelude::*;
 
 proptest! {
@@ -75,6 +77,42 @@ proptest! {
             let ea = Email::parse(&format!("{a}@ex.com")).unwrap();
             let eb = Email::parse(&format!("{b}@ex.com")).unwrap();
             prop_assert_ne!(ea.as_str(), eb.as_str());
+        }
+    }
+
+    /// Invariant 7, confinement : pour TOUTE chaîne (contrôles, bidi,
+    /// invisibles, multi-octets compris), l'assemblage transporte le contenu
+    /// externe verbatim (préfixe verbatim si coupé à la borne, drapeau levé)
+    /// et laisse l'instruction système et la demande humaine strictement
+    /// inchangées.
+    #[test]
+    fn compile_transports_external_content_verbatim(
+        content in proptest::string::string_regex(
+            "(?s)[\\x00-\\x1f\\x7fa-z0-9 \u{202e}\u{2066}\u{200b}\u{feff}\u{ad}éΩ€𝄞中\"\\\\{}\\[\\]:,]{0,300}"
+        ).expect("regex de génération"),
+        max_chars in 1usize..200,
+    ) {
+        let limits = AssemblyLimits { max_document_chars: max_chars };
+        let segments = vec![
+            Segment::SystemInstruction("Instruction figée.".to_owned()),
+            Segment::UserRequest("Demande figée.".to_owned()),
+            Segment::ExternalContent {
+                content: content.clone(),
+                source: SourceRef::Mail { message_id: "<p@t>".to_owned() },
+                classification: Classification::Internal,
+            },
+        ];
+        let compiled = compile(&segments, &limits).expect("assemblage");
+        prop_assert_eq!(compiled.system.as_str(), "Instruction figée.");
+        prop_assert_eq!(compiled.user_request.as_str(), "Demande figée.");
+        let doc = &compiled.documents[0];
+        if content.chars().count() <= max_chars {
+            prop_assert!(!doc.truncated);
+            prop_assert_eq!(&doc.content, &content);
+        } else {
+            prop_assert!(doc.truncated);
+            prop_assert_eq!(doc.content.chars().count(), max_chars);
+            prop_assert!(content.starts_with(&doc.content));
         }
     }
 }

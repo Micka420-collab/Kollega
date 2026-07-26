@@ -1,10 +1,12 @@
 //! Corpus adversarial de l'assemblage des segments (invariant 7).
 //!
 //! Chaque entrée est un contenu externe HOSTILE qui tente de se faire passer
-//! pour une instruction. Le contrat vérifié, pour chacune : le contenu ne
-//! peut atteindre QUE `documents[]` ; l'instruction système et la demande
-//! humaine ressortent inchangées ; aucun caractère de manipulation
-//! invisible ne survit ; la forme sérialisée garde le contenu comme donnée.
+//! pour une instruction. Le contrat vérifié, pour chacune — CONFINEMENT,
+//! pas neutralisation (modèle de menace v2) : le contenu ne peut atteindre
+//! QUE `documents[]` ; l'instruction système et la demande humaine
+//! ressortent inchangées ; le contenu hostile est transporté VERBATIM
+//! (octet pour octet — on ne l'épure pas, on le confine) ; la forme
+//! sérialisée garde le contenu comme donnée.
 //!
 //! Ce corpus est volontairement LISIBLE : chaque cas a un nom et un
 //! commentaire. L'ajouter est la réponse attendue à toute nouvelle
@@ -186,21 +188,18 @@ fn hostile_content_never_reaches_instruction_fields() {
 }
 
 #[test]
-fn no_manipulation_character_survives_neutralization() {
-    let forbidden = [
-        '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2066}', '\u{2067}',
-        '\u{2068}', '\u{2069}', '\u{061C}', '\u{200B}', '\u{200C}', '\u{200D}', '\u{200E}',
-        '\u{200F}', '\u{FEFF}', '\u{2060}', '\u{0}', '\u{7}', '\u{1B}',
-    ];
+fn hostile_content_is_transported_intact() {
+    // Confinement : le contenu hostile n'est PAS épuré — il ressort octet
+    // pour octet, marques bidi, invisibles et contrôles compris. La défense
+    // n'est pas de modifier la donnée (un document client avec des marques
+    // de direction légitimes serait corrompu), mais de la confiner dans un
+    // champ dont l'origine est explicite, sous politique et validation.
     for (name, hostile) in CORPUS {
         let compiled = assemble(hostile);
-        let content = &compiled.documents[0].content;
-        for c in forbidden {
-            assert!(
-                !content.contains(c),
-                "cas {name} : caractère {c:?} survivant dans le contenu neutralisé"
-            );
-        }
+        assert_eq!(
+            compiled.documents[0].content, *hostile,
+            "cas {name} : le contenu externe doit être transporté verbatim"
+        );
     }
 }
 

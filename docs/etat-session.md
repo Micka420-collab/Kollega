@@ -14,7 +14,7 @@ Sensibilité du test RLS non encore prouvée par exécution → en cours.
 |---|---|---|---|
 | 0 — Reprise | terminé | — | Aucun bloc INTERROMPU EN COURS hérité ; suspens du 28/07 repris ci-dessous |
 | 1 — CI (priorité absolue) | terminé | 0 | **Invariant 1 PROUVÉ 28/07/2026** : run 30223145565 verte, run 30223419721 ROUGE (branche jetable, politique users retirée, supprimée après lecture). Réserve : logs bruts inaccessibles (403 sans jeton). **Différentiel canonical.py : VERT en run n°4** — 12 014 encodages + 2 000 empreintes, zéro divergence ; seul défaut de premier passage : bloc `__main__` avant `_from_json` (NameError), corrigé avant exécution. Runs main n°1/3/4 vertes |
-| 2 — Retirer la neutralisation (inv. 7) | non commencé | 0 | |
+| 2 — Retirer la neutralisation (inv. 7) | terminé | 1 | Confinement seul : contenu externe VERBATIM (ni substitution, ni normalisation CRLF, ni marqueur injecté — le drapeau `truncated` suffit) ; champ `neutralized` supprimé ; modèle de menace v2 avec les 3 questions tranchées ; devoir d'affichage transféré à M6. Tour 1 : proptest verbatim ajouté (le corpus n'avait pas de `\r`), sabotage `\r`→`\n` attrapé par le test unitaire ET le proptest (contre-exemple minimal `"\r"`), bornes multi-octets et borne exacte testées |
 | 3 — Argon2 : plafond 64 Mio + sémaphore | non commencé | 0 | |
 | 4 — Bornes à deux étages | non commencé | 0 | |
 | 5 — Version dans l'enveloppe d'état | non commencé | 0 | |
