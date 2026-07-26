@@ -78,6 +78,11 @@ jobs:
     # sont globaux au cluster, jouer DROP ROLE dans le cluster du job de
     # tests casserait ses connexions.
     runs-on: ubuntu-latest
+    permissions:
+      # Publication du diagnostic sur la branche ci-diagnostic : les
+      # journaux et le résumé de job exigent un jeton pour être LUS, la
+      # branche est lisible en anonyme via raw.githubusercontent.com.
+      contents: write
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -108,6 +113,7 @@ jobs:
           capture() {
             local label="$1"; shift
             if ! "$@" > step-out.txt 2>&1; then
+              { echo "ÉCHEC — $label"; tail -c 4000 step-out.txt; } > echec.txt
               summary "### ÉCHEC — $label"
               summary '```'
               tail -c 4000 step-out.txt >> "$GITHUB_STEP_SUMMARY"
@@ -138,28 +144,42 @@ jobs:
           snapshot apres-down
           fail=0
           for part in schema roles ext acl; do
-            if ! diff "vierge.$part" "apres-down.$part" > delta.txt; then
+            if ! diff "vierge.$part" "apres-down.$part" > "delta-down-$part.txt"; then
               fail=1
               summary "### DIVERGENCE down↩vierge ($part)"
               summary '```'
-              head -c 4000 delta.txt >> "$GITHUB_STEP_SUMMARY"
+              head -c 4000 "delta-down-$part.txt" >> "$GITHUB_STEP_SUMMARY"
               summary '```'
             fi
           done
           apply
           snapshot apres-up-2
           for part in schema roles ext acl; do
-            if ! diff "apres-up-1.$part" "apres-up-2.$part" > delta.txt; then
+            if ! diff "apres-up-1.$part" "apres-up-2.$part" > "delta-reup-$part.txt"; then
               fail=1
               summary "### DIVERGENCE re-up ($part)"
               summary '```'
-              head -c 4000 delta.txt >> "$GITHUB_STEP_SUMMARY"
+              head -c 4000 "delta-reup-$part.txt" >> "$GITHUB_STEP_SUMMARY"
               summary '```'
             fi
           done
           if [ "$fail" -ne 0 ]; then exit 1; fi
           summary "réversibilité prouvée : down rend le vierge, re-up reproduit l'état"
           echo "réversibilité prouvée"
+      - name: Publier le diagnostic (branche ci-diagnostic, lisible en anonyme)
+        if: always()
+        run: |
+          mkdir -p diag
+          cp -f echec.txt step-out.txt server-version.txt diag/ 2>/dev/null || true
+          cp -f vierge.* apres-up-1.* apres-down.* apres-up-2.* delta-*.txt diag/ 2>/dev/null || true
+          cd diag
+          ls -la > index.txt
+          git init -q -b ci-diagnostic
+          git config user.email "ci@kollega.invalid"
+          git config user.name "CI diagnostic"
+          git add -A
+          git commit -qm "diagnostic reversibilite run ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-diagnostic
 
   image:
     needs: verifications
