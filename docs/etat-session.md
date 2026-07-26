@@ -13,7 +13,7 @@ Sensibilité du test RLS non encore prouvée par exécution → en cours.
 | Bloc | Statut | Tours d'approfondissement | Note |
 |---|---|---|---|
 | 0 — Reprise | terminé | — | Aucun bloc INTERROMPU EN COURS hérité ; suspens du 28/07 repris ci-dessous |
-| 1 — CI (priorité absolue) | en cours | 0 | **Invariant 1 PROUVÉ 28/07/2026** : run 30223145565 verte, run 30223419721 ROUGE (branche jetable `ci-sensibilite-rls`, politique users retirée, supprimée après lecture). Réserve : logs bruts inaccessibles (403 sans jeton) — impossible de distinguer lequel des deux tests RLS a rougi. Consigné dans matrice + README + en-têtes. Reste du bloc : test différentiel canonical.py (le runner a Python) |
+| 1 — CI (priorité absolue) | terminé | 0 | **Invariant 1 PROUVÉ 28/07/2026** : run 30223145565 verte, run 30223419721 ROUGE (branche jetable, politique users retirée, supprimée après lecture). Réserve : logs bruts inaccessibles (403 sans jeton). **Différentiel canonical.py : VERT en run n°4** — 12 014 encodages + 2 000 empreintes, zéro divergence ; seul défaut de premier passage : bloc `__main__` avant `_from_json` (NameError), corrigé avant exécution. Runs main n°1/3/4 vertes |
 | 2 — Retirer la neutralisation (inv. 7) | non commencé | 0 | |
 | 3 — Argon2 : plafond 64 Mio + sémaphore | non commencé | 0 | |
 | 4 — Bornes à deux étages | non commencé | 0 | |

@@ -1,22 +1,31 @@
 # Référence indépendante de l'encodage canonique
 
-## État : NON VÉRIFIÉ
+## État : VÉRIFIÉ EN CI depuis le 28/07/2026 (run n°4)
 
 `canonical.py` a été écrit le 28/07/2026 **depuis la spécification**
 (`docs/encodage-canonique.md`), sans interpréteur Python sur la machine de
-développement : il n'a **jamais été exécuté**. Il ne prouve donc rien
-aujourd'hui — c'est un artefact à activer, pas une garantie.
+développement. Le harnais différentiel tourne désormais à chaque CI
+(`.github/workflows/ci.yml`, étape « Différentiel encodage canonique ») :
 
-## Ce qu'il faut pour le vérifier
+- le test Rust `crates/kollega-audit/tests/diff_vectors.rs` génère
+  12 014 vecteurs d'encodage (préambule de pièges figés + génération
+  déterministe SplitMix64, graine figée, rejouable) et 2 000 empreintes
+  complètes (`entry_hash` : prev × contenu × hauteur × horodatage) ;
+- `canonical.py` les rejoue (modes stdin et `--hashes`) ;
+- la CI compare octet à octet. Première exécution : run n°4, 28/07/2026,
+  **aucune divergence** sur les 14 014 vecteurs.
 
-1. Un interpréteur Python 3.10+ (`char | None` dans les annotations).
-2. Un harnais différentiel (à écrire) :
-   - le test Rust `canonical_injectivity.rs` génère N ≥ 10 000 vecteurs et
-     émet, pour chacun, la valeur (forme JSON taguée) et l'encodage Rust ;
-   - `canonical.py` relit les valeurs sur stdin et émet l'encodage Python ;
-   - comparaison octet à octet ; toute divergence est signalée.
-3. Recouper au moins un vecteur d'`entry_hash` avec le SHA-256 indépendant
-   déjà utilisé (le V1 des vecteurs de référence Rust).
+Ce que cela prouve : la spécification est non ambiguë — deux lecteurs
+indépendants en tirent les mêmes octets et les mêmes empreintes. C'est ce
+qu'un auditeur tiers exigera pour vérifier une chaîne sans notre code.
+Ce que cela ne prouve PAS : l'injectivité (prouvée côté Rust par le
+round-trip de `canonical_injectivity.rs`, voir le cadrage dans
+`docs/encodage-canonique.md`).
+
+Correction du 28/07/2026, AVANT toute exécution : le bloc `__main__`
+précédait la définition de `_from_json` (NameError garanti en mode script) ;
+bloc déplacé en fin de fichier, fonctions d'encodage et de hachage
+inchangées. Défaut d'ordre de définition, pas de spécification.
 
 ## Règle
 
