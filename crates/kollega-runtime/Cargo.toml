@@ -2,6 +2,11 @@
 name = "kollega-runtime"
 version.workspace = true
 edition.workspace = true
-description = "La boucle d'agent"
+description = "La boucle d'agent — noyau pur"
 
 [dependencies]
+kollega-core = { path = "../kollega-core" }
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest = "1"

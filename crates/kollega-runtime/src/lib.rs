@@ -1,8 +1,14 @@
-//! La boucle d'agent (jalon M3) — le seul algorithme du produit.
+//! La boucle d'agent (jalon M3) — noyau pur.
 //!
-//! Vide au jalon M0 : seule la place dans le graphe de dépendances est posée.
+//! Au stade actuel : le noyau comptable ([`budget`], invariants 5 et 6). La
+//! machine à états complète (perception → plan → outil → vérification →
+//! journal) et sa reprise arrivent avec un `ModelProvider` de test.
 
 #![forbid(unsafe_code)]
+
+pub mod budget;
+
+pub use budget::{Budget, BudgetError, SpendDecision};
 
 #[cfg(test)]
 mod tests {
