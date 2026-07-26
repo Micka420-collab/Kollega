@@ -884,6 +884,9 @@ version = "0.1.0"
 [[package]]
 name = "kollega-policy"
 version = "0.1.0"
+dependencies = [
+ "kollega-core",
+]
 
 [[package]]
 name = "kollega-runtime"

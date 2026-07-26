@@ -2,6 +2,7 @@
 name = "kollega-policy"
 version.workspace = true
 edition.workspace = true
-description = "Moteur de décision sur les appels d'outils"
+description = "Moteur de décision sur les appels d'outils — partie pure (invariant 2)"
 
 [dependencies]
+kollega-core = { path = "../kollega-core" }
