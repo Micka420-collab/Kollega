@@ -1,9 +1,9 @@
 # EXÉCUTÉ depuis le 28/07/2026 : run n°1 (30223145565) verte — isolation
 # RLS sur base réelle, image, SBOM et signature cosign validés ; run n°2
 # (30223419721, branche jetable, politique RLS retirée) ROUGE — preuve que
-# le test d'isolation sait échouer. Ce que cette CI ne prouve PAS encore :
-# les migrations de retour arrière (.down.sql jamais jouées) et la
-# référence Python de l'encodage canonique (test différentiel à brancher).
+# le test d'isolation sait échouer. Le différentiel canonical.py tourne
+# depuis la run n°4 ; la réversibilité des migrations est jouée par le job
+# « reversibilite » (up → down → diff avec l'état vierge → re-up → diff).
 #
 # Intégration continue : fmt → clippy → tests (dont graphe de dépendances,
 # isolation RLS et filet structurel sur base réelle) → image → SBOM →
@@ -71,6 +71,60 @@ jobs:
           echo "encodages compares : $(wc -l < target/diff/rust.out)"
           echo "empreintes comparees : $(wc -l < target/diff/rust-hashes.out)"
           test "$(wc -l < target/diff/rust.out)" -ge 12000
+
+  reversibilite:
+    # Invariant 13 : les .down.sql doivent avoir TOURNÉ, pas seulement
+    # exister. Job séparé avec son PROPRE cluster : les rôles PostgreSQL
+    # sont globaux au cluster, jouer DROP ROLE dans le cluster du job de
+    # tests casserait ses connexions.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: kollega
+          POSTGRES_USER: kollega_migrate
+          POSTGRES_PASSWORD: ci_migrate
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U kollega_migrate -d kollega"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: kollega_migrate
+      PGPASSWORD: ci_migrate
+      PGDATABASE: kollega
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aller-retour complet des migrations (up → down → up)
+        run: |
+          snapshot() {
+            pg_dump --schema-only --no-owner --no-privileges > "$1.schema"
+            # pg_dump ne couvre ni les rôles, ni les extensions, ni les
+            # privilèges de schéma : capturés à part.
+            psql -Atc "SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE 'kollega%' ORDER BY rolname" > "$1.roles"
+            psql -Atc "SELECT extname FROM pg_extension ORDER BY extname" > "$1.ext"
+            psql -Atc "SELECT COALESCE(nspacl::text, '') FROM pg_namespace WHERE nspname = 'public'" > "$1.acl"
+          }
+          apply()  { for f in migrations/*.up.sql;            do psql -v ON_ERROR_STOP=1 -f "$f"; done; }
+          revert() { for f in $(ls -r migrations/*.down.sql); do psql -v ON_ERROR_STOP=1 -f "$f"; done; }
+
+          snapshot vierge
+          apply
+          snapshot apres-up-1
+          revert
+          snapshot apres-down
+          echo "— le retour arrière doit rendre l'état vierge —"
+          for part in schema roles ext acl; do diff "vierge.$part" "apres-down.$part"; done
+          echo "— la ré-application doit reproduire le même état —"
+          apply
+          snapshot apres-up-2
+          for part in schema roles ext acl; do diff "apres-up-1.$part" "apres-up-2.$part"; done
+          echo "réversibilité prouvée : down rend le vierge, re-up reproduit l'état"
 
   image:
     needs: verifications

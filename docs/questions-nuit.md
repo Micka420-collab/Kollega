@@ -75,6 +75,35 @@ Choix réversibles pris seul :
    sérialisation de l'état de tâche — indispensable à la reprise. Périphérie,
    pas le domaine : hors invariant 11.
 
+## Bloc 8 — les deux coutures : options recommandées, NON tranchées
+
+Les deux exigent de modifier le graphe de dépendances gelé par
+`dependency_graph.rs` — c'est une décision d'architecture qui t'appartient.
+Rien n'a été câblé cette session.
+
+- **Couture AuditEvent → chaîne `kollega-audit`.** Option recommandée :
+  `kollega-runtime` dépend de `kollega-audit` ; la machine pure continue
+  d'ÉMETTRE des `AuditEvent` sans horodatage (elle n'a pas d'horloge, et ne
+  doit pas en avoir), et c'est la boucle d'exécution de la périphérie (M3)
+  qui transforme chaque événement en `EntryContent` (horodatage injecté par
+  l'horloge du monde réel) et l'ajoute à la chaîne de l'organisation
+  (`OrgChain::append`) DANS LA MÊME transaction que l'état de tâche — le
+  `Vec<AuditEvent>` local devient un simple tampon d'émission, jamais une
+  source de vérité. À trancher par toi : (a) l'arête runtime→audit dans le
+  graphe ; (b) qui détient la queue de chaîne (table `audit_log`, verrou
+  par organisation — rejoint `docs/credits-concurrence.md`) ; (c) le refus
+  explicite de toute horloge dans le pur.
+- **Couture moteur de politiques réel.** Option recommandée :
+  `PlannedAction::UseTool` porte un `ToolCallRequest` COMPLET (montant,
+  destinataires, chemins — pas seulement le nom), le trait `PolicyEngine`
+  du runtime prend ce `ToolCallRequest` et retourne l'`Evaluation` de
+  `kollega-policy` ; l'adaptateur de production appelle
+  `kollega_policy::decide(règles_de_l_organisation, requête)`. Sans cela,
+  l'invariant 2 reste un contrôle par nom d'outil. À trancher par toi :
+  (a) l'arête runtime→policy dans le graphe ; (b) la véracité des valeurs
+  déclarées (montant, destinataires) à garantir par la couche MCP — point
+  de revue M2 déjà consigné.
+
 ## Questions architecturales non tranchées (28/07)
 
 - Réconcilier l'`AuditEvent` de la machine à états (BLOC 10) avec la chaîne
