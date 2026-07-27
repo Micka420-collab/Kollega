@@ -11,7 +11,7 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 ## État réel au 28/07/2026
 
-`cargo test --workspace` : **196 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
+`cargo test --workspace` : **197 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
 
 **Et l'on sait qu'ils ont tourné.** Sept tests exigent une base réelle et se sautent poliment sans elle — commodité en local, mais le plus beau trou du dispositif de preuve : la base ne leur est fournie que par *une ligne* de `ci.yml`, dont la disparition rendrait sept tests verts en ne prouvant plus rien. Depuis le 29/07, se sauter **en intégration continue est un échec**, et tout test qui se conditionne doit le faire par une variable que cette garde couvre — sans quoi un futur test se sauterait à jamais sous une variable que personne ne surveille. Un vert de complaisance est pire qu'un rouge : il s'affiche comme une preuve.
 
@@ -36,6 +36,7 @@ Le journal ne se contente pas d'être intact : **sa séquence est vérifiée sur
 ### Prouvé aussi, depuis le 28/07/2026
 
 - **La réversibilité des migrations** (invariant 13) : le job CI `reversibilite` joue up → down → diff avec l'état vierge → re-up → diff (schéma, rôles, extensions, ACL effective) sur un cluster dédié — **vert à la run n°15**, après cinq rouges instructifs (réglage de la comparaison d'ACL, puis jeton aléatoire `\restrict` de pg_dump ≥ 18). Dossier de preuve archivé sur la branche `ci-diagnostic`. Réserve : prouvé via psql — l'outillage applicatif (`sqlx::migrate!`) n'a pas encore de chemin de descente.
+- **Et depuis le 29/07, que chaque migration en ait une.** Le job prouvait que les descentes *existantes* ramènent au vierge, jamais qu'une migration en possède une. L'écart n'était pas théorique : `sqlx::migrate!` accepte une migration sans `.down.sql` (vérifié, recompilation forcée à l'appui), et le job ne compare que schéma, rôles, extensions et ACL — une migration de **données** serait passée verte sans descente, l'invariant 13 violé en silence tout en restant marqué « prouvé ». Une garde l'exige maintenant, et rend enfin utilisable la seconde branche de l'invariant : l'irréversibilité *assumée*, qui réclame un marqueur **et** une justification écrite dans le fichier.
 
 ### Pas encore construit
 
