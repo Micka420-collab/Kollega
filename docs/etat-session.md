@@ -1,5 +1,13 @@
 # État de session — mis à jour après chaque bloc
 
+> **Nuit du 28 au 29/07/2026 — session en boucle auto-cadencée : les six
+> priorités du brief sont FAITES.** Rapport complet :
+> `docs/rapport-nuit-2026-07-29.md`. Dernière CI verte : n°33.
+> Reste ouvert : coût réel non mesuré (pas de clé d'API), `PolicyEngine` de
+> la machine encore réduit au nom d'outil, double attestation détectée mais
+> non empêchée lors d'une restauration partielle.
+
+
 Session en cours : 28/07/2026, deuxième session de jour (suite directe).
 Brief : LA TRANCHE VERTICALE D'ABORD — rien d'autre ne commence avant
 qu'une tâche traverse réellement (créée → politique → exécutée → débitée →
