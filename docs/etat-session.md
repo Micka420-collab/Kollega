@@ -209,6 +209,27 @@
 >     qu'un autre dès lors que des gardes lisent la documentation** — je
 >     n'avais pas surveillé la CI après un commit purement documentaire.
 >
+> 24. **Chemins d'erreur du code : deux dégradations silencieuses dans
+>     l'audit.** (a) `now_micros` écrivait `.unwrap_or(0)` — une horloge
+>     antérieure à l'époque Unix (machine virtuelle dont l'horloge
+>     matérielle repart de zéro, conteneur sans synchronisation) scellait
+>     dans la chaîne un horodatage valant **1970**, cohérent et faux.
+>     L'erreur de `duration_since` porte pourtant l'écart : il est repris
+>     en négatif, et `Timestamp` sait déjà représenter l'avant-époque. Un
+>     horodatage négatif se remarque ; un 1970 se confond avec une valeur
+>     par défaut. (b) La hauteur de chaîne était écrêtée à `i64::MAX` en
+>     cas de dépassement : le stocké aurait divergé du haché, rendant la
+>     chaîne invérifiable pour une cause introuvable. Inatteignable
+>     (2⁶³ entrées), mais le mode de défaillance était le mauvais — on
+>     refuse d'écrire plutôt que d'écrire un mensonge.
+> 25. **`TaskNotFound` n'était produit par aucun test**, et il porte une
+>     propriété de sécurité : sous RLS, la tâche d'une AUTRE organisation
+>     est invisible, donc indiscernable d'une tâche inexistante. Qui
+>     « améliorerait » ce diagnostic en distinguant les deux cas ouvrirait
+>     un canal d'énumération sans toucher à la RLS ni à aucune politique.
+>     Le test refuse cette amélioration-là, et vérifie en outre que la
+>     tentative de B n'a pas altéré la tâche de A.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
