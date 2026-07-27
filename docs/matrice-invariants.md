@@ -38,10 +38,27 @@ avoir tourné mille fois sans jamais pouvoir échouer.
 | 12 | **`REVOKE DELETE` sur `users` retiré** de la migration 0006 (branche jetable) | CI run n°65 **rouge** sur ce test seul, message exact, `reversibilite` restée verte |
 | 13 | Migration sans descente, justification trop courte, versions homonymes, descente orpheline | 4 rouges + témoin positif vert (l'irréversibilité justifiée passe bien) |
 
-**Non encore falsifiés** : la commande `audit verify` en CLI et la tranche
-verticale prise dans son ensemble (son test d'idempotence l'a été). Ce
-n'est pas une réserve de principe : ce sont les deux dernières preuves
-dont on ignore encore si elles savent échouer.
+**Il ne reste rien à falsifier : toute preuve existante a été vue rouge.**
+Les deux dernières l'ont été le 29/07 :
+
+- **`audit verify` en CLI** — code de sortie 1 supprimé sur chaîne rompue,
+  branche jetable : rouge sur ce test seul, « une chaîne ALTÉRÉE doit
+  faire échouer la commande ». C'est précisément ce que la commande
+  ajoute à la bibliothèque : être branchable à une supervision. Une
+  commande qui nomme la rupture et rend 0 ne réveille personne.
+- **La tranche verticale entière** — `into_state()` perd l'appel en
+  attente de validation, donc l'état ne fait plus l'aller-retour fidèle
+  par la base : rouge à DEUX niveaux, le test pur
+  `scenario_resume_after_interruption_is_identical` et le test sur base
+  réelle `the_vertical_slice_goes_through`.
+
+**Un piège de méthode, à retenir.** Le premier essai sur la tranche a
+conclu à tort que le test sur base réelle ne détectait rien : la CI
+lançait `cargo test` sans `--no-fail-fast`, s'arrêtait au premier binaire
+en échec, et n'exécutait donc jamais la tranche. Un test qui n'a pas
+tourné ressemble en tout point à un test qui n'a rien vu. L'option est
+désormais posée dans la CI — pas par confort de diagnostic, mais parce
+que sans elle un sabotage peut mentir dans le sens rassurant.
 
 | # | Invariant (résumé) | Test | Fichier | Exécuté | Commentaire |
 |---|---|---|---|---|---|

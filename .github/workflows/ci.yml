@@ -61,9 +61,15 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests (graphe de dépendances + isolation RLS sur base réelle)
+        # `--no-fail-fast` (29/07) : sans lui, cargo s'arrête au PREMIER
+        # binaire en échec et n'exécute jamais les suivants. Le diagnostic
+        # publié ne montrait alors qu'une partie des dégâts, et — pire — un
+        # test pouvait passer pour « n'ayant rien détecté » alors qu'il
+        # n'avait pas tourné du tout. C'est arrivé deux fois le même jour,
+        # dont une où j'ai failli consigner qu'une preuve était insensible.
         run: |
           set -o pipefail
-          cargo test --workspace --locked 2>&1 | tee test-out.txt
+          cargo test --workspace --locked --no-fail-fast 2>&1 | tee test-out.txt
       - name: Publier le diagnostic des tests (branche lisible en anonyme)
         if: failure()
         run: |
