@@ -296,6 +296,29 @@
 >     Chaque entrée nomme **ce qui la tient** — un document sans mécanisme
 >     derrière lui se reconnaît alors d'un coup d'œil.
 >
+> 31. **Deux de mes audits étaient déclarés complets avec le mauvais
+>     dénominateur.** C'est la faute que je traque depuis le début,
+>     appliquée à ma propre méthode : affirmer une couverture sans
+>     vérifier le périmètre. (a) « Toutes les variantes d'erreur
+>     recensées » portait sur **quatre enums sur onze** ; en finissant, j'ai
+>     trouvé une assertion faible dans le test de l'enveloppe versionnée —
+>     `{"state":{}}` cumulait DEUX fautes (état vide *et* version
+>     manquante) et rien ne disait laquelle était détectée, si bien que
+>     l'intention annoncée n'était pas prouvée. (b) « Les dix gardes
+>     relues de façon adversariale » : j'en ai écrit **douze**, et les deux
+>     dernières n'avaient été sabotées que par leur auteur. `deployment_env`
+>     ne lisait que `main.rs` — une variable lue ailleurs dans le binaire
+>     ou dans une bibliothèque embarquée lui échappait entièrement.
+> 32. **Une garde tient désormais les citations de la constitution.**
+>     `claude-md-corrections-proposees.md` cite quatre extraits de
+>     `CLAUDE.md` ; le jour où l'un est appliqué, le document citerait
+>     l'ancien texte comme courant — et le lecteur suivant referait la
+>     correction, ou la déferait en croyant réparer. Le document destiné à
+>     améliorer la constitution deviendrait le moyen de la dégrader.
+>     **Élargissement refusé, et c'est noté** : j'ai essayé d'assouplir le
+>     déclencheur de `schema_claims`, cinq faux positifs d'un coup, marche
+>     arrière. Une garde qui crie à tort finit désactivée.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
