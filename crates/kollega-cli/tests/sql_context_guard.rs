@@ -135,15 +135,45 @@ fn context_is_only_set_via_local_parameterized_set_config() {
 
     // Motifs interdits, construits par morceaux pour ne pas se piéger
     // soi-même dans d'autres fichiers de test.
-    let session_set_config = format!("'app.current_org', $1, {}", "false");
     let raw_set_guc = format!("{} app.", "SET");
+    // La SEULE forme admise, littéralement. Tout autre appel de
+    // `set_config` portant sur `app.current_org` est refusé, quelle que
+    // soit son écriture.
+    //
+    // La v2 de cette garde ne cherchait qu'une chaîne : `$1, false` en
+    // minuscules. Trois écritures équivalentes passaient donc au travers —
+    // `FALSE`, `'f'`, et un troisième argument paramétré `$2` — et chacune
+    // pose le contexte en portée SESSION. Un contexte de session survit au
+    // retour de la connexion dans le pool : la requête suivante, celle
+    // d'une AUTRE organisation, s'exécuterait sous le contexte de la
+    // précédente. C'est exactement la catastrophe que l'invariant 1
+    // existe pour empêcher, et la garde la laissait passer par trois
+    // portes. Interdire tout ce qui n'est pas la forme canonique ferme la
+    // question au lieu d'énumérer les fautes, toujours incomplète.
+    let canonical_call = format!("set_config('app.current_org', $1, {})", "true");
 
     let mut violations = Vec::new();
     for path in &sources {
         let content = fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("lecture de {} : {e}", path.display()));
-        if content.contains(&session_set_config) {
-            violations.push(format!("{} : set_config en portée session", path.display()));
+        let mut rest = content.as_str();
+        while let Some(at) = rest.find("set_config(") {
+            let call = &rest[at..];
+            rest = &call["set_config(".len()..];
+            // Fenêtre ramenée à une frontière de caractère : les
+            // commentaires sont en français.
+            let mut end = call.len().min(80);
+            while !call.is_char_boundary(end) {
+                end -= 1;
+            }
+            if call[..end].contains("app.current_org") && !call.starts_with(&canonical_call) {
+                violations.push(format!(
+                    "{} : appel de set_config sur app.current_org qui n'est PAS \
+                     la forme canonique {canonical_call:?} — toute autre écriture \
+                     risque la portée session",
+                    path.display()
+                ));
+            }
         }
         if content
             .to_ascii_uppercase()
