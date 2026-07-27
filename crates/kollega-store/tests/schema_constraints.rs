@@ -71,7 +71,18 @@ async fn the_schema_itself_refuses_an_overdraft_and_a_duplicate_email() {
     let org_b = Uuid::from_u128(0x0005_C11B);
     let mut admin = PgConnection::connect(&migrate_url).await.expect("admin");
     for org in [org_a, org_b] {
-        for table in ["credits", "users"] {
+        // Ordre imposé par les clés étrangères : les effets avant les
+        // tâches, les tâches avant l'organisation. Sans cela, une seconde
+        // exécution sur la même base échouerait au nettoyage, et le test
+        // paraîtrait cassé alors qu'il aurait seulement déjà tourné.
+        for table in [
+            "tool_call_effects",
+            "audit_chain",
+            "audit_content",
+            "tasks",
+            "credits",
+            "users",
+        ] {
             sqlx::query(&format!("DELETE FROM {table} WHERE org_id = $1"))
                 .bind(org)
                 .execute(&mut admin)
@@ -185,4 +196,71 @@ async fn the_schema_itself_refuses_an_overdraft_and_a_duplicate_email() {
     .await
     .expect("le même email dans une AUTRE organisation doit être ACCEPTÉ");
     tx.commit().await.expect("commit B");
+
+    // 3. Le « deuxième filet » de la migration 0004, éprouvé pour lui-même.
+    //
+    // Son commentaire annonce qu'il est INDÉPENDANT de la dérivation :
+    // « même si le calcul de l'identité changeait, deux effets ne pourraient
+    // pas coexister pour un même (tâche, itération) ». Rien ne le vérifiait.
+    // Les tests d'idempotence existants passent par `derive_tool_call_id`, si
+    // bien qu'ils ne produisent JAMAIS deux identités différentes pour la
+    // même itération — ils ne peuvent donc pas atteindre cette contrainte.
+    // Elle aurait pu disparaître d'une migration sans qu'aucun rouge n'en
+    // parle, et l'idempotence n'aurait plus reposé que sur la dérivation.
+    let task = Uuid::from_u128(0x0005_C11C);
+    kollega_store::driver::create_task(&db, org_a, task, kollega_core::Cents(10_000), 4)
+        .await
+        .expect("tâche");
+
+    let mut tx = db.org_transaction(org_a).await.expect("tx");
+    let inserer = |tool_call_id: Uuid| {
+        sqlx::query(
+            "INSERT INTO tool_call_effects \
+             (org_id, tool_call_id, task_id, iteration, tool, result_digest) \
+             VALUES ($1, $2, $3, 7, 'mail.send', $4)",
+        )
+        .bind(org_a)
+        .bind(tool_call_id)
+        .bind(task)
+        .bind(vec![0u8; 32])
+    };
+    inserer(Uuid::from_u128(0x0AAA))
+        .execute(&mut *tx)
+        .await
+        .expect("premier effet");
+    // Identité DIFFÉRENTE, même (tâche, itération) : c'est le cas que la
+    // dérivation rend impossible aujourd'hui et que le schéma doit refuser
+    // quand même.
+    let refus = inserer(Uuid::from_u128(0x0BBB))
+        .execute(&mut *tx)
+        .await
+        .expect_err("deux effets pour la même (tâche, itération)");
+    assert!(
+        is_constraint_violation(&refus, "23505"),
+        "le second effet devait échouer sur l'unicité (23505), \
+         indépendamment de la façon dont l'identité est calculée : {refus}"
+    );
+    drop(tx);
+
+    // 4. Aucun effet ne peut pointer une tâche inexistante : sans cette
+    // clé étrangère, une purge ou un export par organisation laisserait
+    // derrière lui des lignes que plus rien ne rattache.
+    let mut tx = db.org_transaction(org_a).await.expect("tx");
+    let refus = sqlx::query(
+        "INSERT INTO tool_call_effects \
+         (org_id, tool_call_id, task_id, iteration, tool, result_digest) \
+         VALUES ($1, $2, $3, 0, 'mail.send', $4)",
+    )
+    .bind(org_a)
+    .bind(Uuid::from_u128(0x0CCC))
+    .bind(Uuid::from_u128(0xDEAD_BEEF))
+    .bind(vec![0u8; 32])
+    .execute(&mut *tx)
+    .await
+    .expect_err("un effet sur une tâche inexistante");
+    assert!(
+        is_constraint_violation(&refus, "23503"),
+        "l'insertion devait échouer sur la clé étrangère (23503) : {refus}"
+    );
+    drop(tx);
 }
