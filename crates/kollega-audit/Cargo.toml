@@ -10,6 +10,13 @@ kollega-core = { path = "../kollega-core" }
 sha2.workspace = true
 thiserror.workspace = true
 
+[features]
+# Frontière de stockage (bloc 3a) : autorise ContentDigest::from_storage.
+# Déclarée par le SEUL crate de persistance ; la garde textuelle
+# crates/kollega-cli/tests/storage_boundary.rs échoue si `from_storage`
+# est invoqué ailleurs.
+storage-boundary = []
+
 [dev-dependencies]
 proptest = "1"
 serde_json.workspace = true

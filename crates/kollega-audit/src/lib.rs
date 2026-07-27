@@ -51,6 +51,7 @@
 pub mod anchor;
 pub mod canonical;
 pub mod chain;
+pub mod content;
 
 pub use anchor::{Anchor, AnchorPublisher, AnchorViolation, InMemoryAnchorPublisher};
 pub use canonical::CanonicalValue;
