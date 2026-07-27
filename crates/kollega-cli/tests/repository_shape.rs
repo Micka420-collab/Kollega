@@ -32,9 +32,28 @@ fn the_chain_repository_cannot_express_removal() {
              sa surface, pas sa discipline"
         );
     }
-    // Les deux seules capacités admises existent bel et bien.
-    assert!(chain_trait.contains("async fn append"));
-    assert!(chain_trait.contains("async fn read"));
+
+    // La liste de mots interdits ci-dessus est une liste NOIRE, donc en
+    // retard d'un synonyme : `expunge`, `retract`, `forget` la
+    // franchissaient sans effort. Ce qui suit la remplace par une liste
+    // BLANCHE — le trait a EXACTEMENT ces deux méthodes, et toute
+    // troisième, quel que soit son nom, fait rougir. On ne peut pas
+    // énumérer les façons de dire « supprimer » ; on peut énumérer les
+    // deux façons permises de toucher au journal.
+    let mut methods: Vec<String> = Vec::new();
+    let mut rest = chain_trait;
+    while let Some(at) = rest.find("async fn ") {
+        let after = &rest["async fn ".len() + at..];
+        rest = after;
+        methods.push(after.chars().take_while(|c| *c != '(').collect());
+    }
+    assert_eq!(
+        methods,
+        vec!["append".to_owned(), "read".to_owned()],
+        "la surface du dépôt de chaîne a changé. Deux méthodes, `append` et \
+         `read` : retirer une preuve ne doit pas être EXPRIMABLE, pas \
+         seulement déconseillé."
+    );
 }
 
 /// Le trait ne suffit pas si le pilote peut écrire du SQL à côté : la
@@ -55,16 +74,44 @@ fn no_sql_ever_removes_or_rewrites_a_chain_entry() {
     for path in &sources {
         let content = fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("lecture de {} : {e}", path.display()));
-        let flat = content.to_ascii_uppercase().replace(['\n', '\r'], " ");
-        for forbidden in [
-            "DELETE FROM AUDIT_CHAIN",
-            "UPDATE AUDIT_CHAIN",
-            "TRUNCATE AUDIT_CHAIN",
-            "DELETE FROM TOOL_CALL_EFFECTS",
-            "UPDATE TOOL_CALL_EFFECTS",
-        ] {
-            if flat.contains(forbidden) {
-                violations.push(format!("{} : {forbidden}", path.display()));
+        // Les COMMENTAIRES sont écartés : ce fichier-ci comme la
+        // persistance PARLENT des `GRANT DELETE` absents, et une garde qui
+        // se déclenche sur sa propre explication finit désactivée.
+        let code: String = content
+            .lines()
+            .map(|line| line.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join(" ");
+        // Blancs normalisés : sans cela, une requête coupée en deux lignes
+        // — la façon habituelle d'écrire du SQL en Rust — échappait à des
+        // motifs qui supposaient une espace unique.
+        let flat = code
+            .to_ascii_uppercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // On cherche le VERBE puis la table à proximité, au lieu d'une
+        // liste de phrases exactes. Quatre écritures passaient la liste :
+        // requête sur deux lignes, table qualifiée `public.audit_chain`,
+        // identifiant entre guillemets, et nom de table injecté par
+        // `format!`. Une énumération de fautes est toujours en retard d'une
+        // écriture.
+        for keyword in ["DELETE", "UPDATE", "TRUNCATE"] {
+            let mut rest = flat.as_str();
+            while let Some(at) = rest.find(keyword) {
+                let after = &rest[at..];
+                rest = &after[keyword.len()..];
+                let mut end = after.len().min(80);
+                while !after.is_char_boundary(end) {
+                    end -= 1;
+                }
+                let window = &after[..end];
+                for table in ["AUDIT_CHAIN", "TOOL_CALL_EFFECTS"] {
+                    if window.contains(table) {
+                        violations.push(format!("{} : {keyword} … {table}", path.display()));
+                    }
+                }
             }
         }
     }
