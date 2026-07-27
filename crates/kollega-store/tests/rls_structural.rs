@@ -41,6 +41,18 @@ async fn every_tenant_table_has_forced_rls_and_a_policy() {
         .await
         .expect("connexion");
 
+    // Même verrou que `rls_isolation` : ce test affirme que toute table
+    // tenant a sa RLS activée et forcée, tandis que celui-là la désactive
+    // momentanément sur `users` pour prouver sa propre sensibilité. Les
+    // binaires de test tournant en parallèle contre la même base, ils se
+    // recouvraient — deux tests corrects, un rouge intermittent, et une
+    // cause qu'on aurait cherchée dans les migrations.
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(0x524C_5300_i64)
+        .execute(&mut conn)
+        .await
+        .expect("verrou RLS");
+
     let rows = sqlx::query(
         "SELECT c.relname::text,
                 c.relrowsecurity,

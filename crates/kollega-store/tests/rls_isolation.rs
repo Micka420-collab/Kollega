@@ -70,15 +70,50 @@ async fn tenant_isolation_holds_and_the_test_is_sensitive() {
         .expect("mot de passe kollega_app");
 
     let mut admin = PgConnection::connect(&migrate_url).await.expect("admin");
-    // TRUNCATE n'est pas soumis aux politiques RLS : le rôle de migration
-    // (propriétaire des tables, superutilisateur en CI) peut nettoyer.
-    // CASCADE : depuis la migration 0003, tasks/audit_chain/audit_content/
-    // credits référencent organizations — un TRUNCATE nu échouerait sur les
-    // clés étrangères (trouvaille d'intégration de la tranche verticale).
-    sqlx::query("TRUNCATE users, organizations CASCADE")
+
+    // VERROU PARTAGÉ avec `rls_structural` — trouvé le 29/07.
+    //
+    // `cargo test` exécute les binaires de test EN PARALLÈLE contre la même
+    // base. Or ce test désactive plus bas la RLS sur `users` pour prouver sa
+    // propre sensibilité : pendant cette fenêtre, `rls_structural`, qui
+    // affirme que toute table tenant a sa RLS activée et forcée, verrait le
+    // contraire. Deux tests corrects, un rouge intermittent, et une cause
+    // qu'on chercherait longtemps dans les migrations.
+    //
+    // Les deux prennent donc le même verrou consultatif, au niveau session
+    // (libéré à la fermeture de la connexion) : ils ne se recouvrent plus.
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(0x524C_5300_i64)
         .execute(&mut admin)
         .await
-        .expect("nettoyage");
+        .expect("verrou RLS");
+
+    // Nettoyage CIBLÉ sur les deux organisations de ce test.
+    //
+    // C'était un `TRUNCATE users, organizations CASCADE` : global, donc il
+    // effaçait les données de TOUS les tests tournant en parallèle — tâches,
+    // attestations, crédits, effets compris, par la cascade. Un test qui
+    // détruit le décor des autres produit des rouges qu'on impute ensuite à
+    // l'infrastructure.
+    for table in [
+        "tool_call_effects",
+        "audit_chain",
+        "audit_content",
+        "tasks",
+        "credits",
+        "users",
+    ] {
+        sqlx::query(&format!("DELETE FROM {table} WHERE org_id = ANY($1)"))
+            .bind(vec![Uuid::from_u128(0xA), Uuid::from_u128(0xB)])
+            .execute(&mut admin)
+            .await
+            .expect("nettoyage ciblé");
+    }
+    sqlx::query("DELETE FROM organizations WHERE id = ANY($1)")
+        .bind(vec![Uuid::from_u128(0xA), Uuid::from_u128(0xB)])
+        .execute(&mut admin)
+        .await
+        .expect("nettoyage des organisations");
 
     // Témoins structurels : la RLS est activée ET forcée sur chaque table
     // tenant, et kollega_app n'a pas BYPASSRLS. Détecte la perte d'ENABLE,
@@ -197,7 +232,17 @@ async fn tenant_isolation_holds_and_the_test_is_sensitive() {
         .await
         .expect("désactivation RLS");
     let mut tx = db.org_transaction(org_a).await.expect("transaction A");
-    let leaked = count(&mut tx, "SELECT count(*) FROM users").await;
+    // Compte BORNÉ aux deux organisations de ce test : sans la restriction,
+    // il comptait les utilisateurs de toute la base, donc ceux des tests
+    // concurrents. L'assertion « exactement 2 » aurait alors dépendu de ce
+    // que les autres binaires faisaient au même instant — et la preuve de
+    // sensibilité de l'invariant 1 aurait été la plus fragile du dépôt.
+    let leaked: i64 = sqlx::query("SELECT count(*) FROM users WHERE org_id = ANY($1)")
+        .bind(vec![org_a, org_b])
+        .fetch_one(&mut *tx)
+        .await
+        .expect("comptage de fuite")
+        .get(0);
     drop(tx);
     assert_eq!(
         leaked, 2,
