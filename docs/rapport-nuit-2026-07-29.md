@@ -95,10 +95,14 @@ deux implémentations indépendantes » est donc fondée, pas décorative.
 - **Le coût réel n'est toujours pas mesuré** (pas de clé d'API). Un seul
   appel suffirait ; `docs/economie-unitaire.md` attend ce chiffre, et c'est
   lui qui sert à fixer un prix.
-- **Le trait `PolicyEngine` de la machine ne transporte que le nom de
-  l'outil** : les bornes à deux étages de `kollega-policy` ne sont pas
-  atteignables depuis la boucle. L'invariant 2 se réduit encore à un
-  contrôle par nom.
+- ~~Le trait `PolicyEngine` ne transporte que le nom de l'outil.~~
+  **CORRIGÉ en fin de nuit** : le trait est SUPPRIMÉ, `drive` appelle
+  `kollega_policy::decide` directement avec la requête complète. Les bornes
+  à deux étages étaient jusque-là **inertes en production** — testées,
+  mais jamais atteintes par un appel réel. Invariant 2 promu dans la
+  matrice. Réserve restante, honnête : `ToolRunner` est un trait public,
+  rien n'empêche techniquement un appel hors de la boucle (un type témoin
+  délivré par le moteur fermerait ce dernier chemin).
 - Les décisions produit en attente (modèle M4 « relance client », canal
   expert-comptable) — inchangées, elles t'appartiennent.
 

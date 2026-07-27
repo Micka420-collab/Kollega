@@ -9,7 +9,7 @@ Aucune conclusion flatteuse : un invariant dont le test existe mais n'a
 | # | Invariant (résumé) | Test | Fichier | Exécuté | Commentaire |
 |---|---|---|---|---|---|
 | 1 | Isolation par la base (RLS) | `tenant_isolation_holds_and_the_test_is_sensitive`, `every_tenant_table_has_forced_rls_and_a_policy` | `kollega-store/tests/rls_isolation.rs`, `rls_structural.rs` | **OUI — CI, 28/07/2026** | **Prouvé, sensibilité comprise** : run 30223145565 verte (politique en place), run 30223419721 ROUGE sur branche jetable avec la politique `tenant_isolation` de `users` retirée — échec à l'étape des tests, fmt/clippy verts. Réserves : les journaux bruts de CI sont inaccessibles sans jeton (impossible de distinguer lequel des deux tests RLS a produit le rouge — les deux détectent la politique manquante) ; la partie « y compris en recherche vectorielle » reste non couverte, aucune table vectorielle n'existe. |
-| 2 | Aucun appel d'outil sans moteur de politiques | `no_matching_rule_always_denies`, `unknown_tool_is_denied_by_default`, `beyond_hard_limit_is_always_denied_never_approvable` (+ 22 tests policy, bornes à DEUX étages depuis le bloc 4 : limite dure inviolable, fail-open du préfixe vide fermé) ; `scenario_denied_by_policy` | `kollega-policy/…`, `kollega-runtime/src/machine.rs` | Oui | **Partiel** : la DÉCISION pure (refus par défaut, deux étages) est prouvée, et la machine à états fait passer tout appel par `decide` — mais son `PolicyEngine` local ne transporte que le NOM d'outil (pas les bornes de kollega-policy), et rien n'empêche un appel hors `drive`. Couture consignée (questions-nuit, bloc 8) ; l'enforcement réel reste au M3. |
+| 2 | Aucun appel d'outil sans moteur de politiques | `no_matching_rule_always_denies`, `beyond_hard_limit_is_always_denied_never_approvable` (+ 22 tests policy) ; **`the_hard_limit_now_stops_the_call_from_inside_the_loop`** ; tranche verticale avec bornes réelles (CI) | `kollega-policy/…`, `kollega-runtime/src/machine.rs`, `kollega-store/tests/vertical_slice.rs` | **OUI — CI, 29/07/2026** | **Couvert dans la boucle** (nuit du 28 au 29) : le trait intermédiaire a été SUPPRIMÉ — il ne transportait que le nom de l'outil, ce qui rendait les bornes à deux étages inertes en production malgré leurs tests. `drive` appelle `kollega_policy::decide` directement avec la requête complète ; 500 destinataires contre une limite dure de 100 sont refusés depuis la boucle, rien n'est facturé. Réserve maintenue et honnête : `ToolRunner` reste un trait public — rien n'empêche *techniquement* un appel hors `drive`. Un type témoin délivré par le moteur fermerait ce dernier chemin. |
 | 3 | Deux entrées d'audit par appel d'outil (intention + résultat) | `scenario_nominal`, `scenario_denied_by_policy` (pur) ; **`verify_org_sequence` sur la chaîne PERSISTÉE** + validateur asymétrique (`records.rs`, 7 cas) | `kollega-runtime/src/machine.rs`, `kollega-store/src/driver.rs`, `kollega-audit/src/records.rs` | **OUI — CI, 29/07/2026** | **Couvert jusqu'à la persistance** (nuit du 28 au 29) : le pont machine→`AuditRecord` existe, la colonne `tool_call_id` porte l'identité dérivée, et la séquence est validée sur les VRAIES données — clôture orpheline, double intention, double clôture, enregistrement après clôture. L'asymétrie tient : un appel ouvert (validation en attente, redémarrage) est une INFORMATION, pas une violation. Réserve : le contenu attesté reste l'événement de machine, pas encore la requête/réponse d'outil réelle (M2). |
 | 4 | Journal ajout seul, chaîné, ancré | `reference_vectors`, `chain_properties`, `canonical_injectivity`, tests `anchor` ; **GRANT sans DELETE éprouvés en CI**, garde SQL anti-retrait, unicité d'attestation | `kollega-audit/…`, `migrations/0003`, `0005`, `kollega-cli/tests/repository_shape.rs` | **OUI — CI, 29/07/2026** | **Couvert au-delà du pur.** « Ajout seul » n'est plus une lecture de code : le rôle applicatif ne PEUT pas supprimer dans la chaîne (testé en CI, l'échec est asserté), la surface du dépôt ne l'exprime pas, et une garde textuelle échoue si un `DELETE`/`UPDATE` apparaît dans la persistance. Depuis la migration 0005, une DOUBLE attestation du même appel est impossible — le journal ne peut plus dire qu'un outil s'est exécuté deux fois quand il ne l'a fait qu'une. Restent : `audit verify` en CLI, et l'ancrage opérationnel. |
 | 5 | Crédit vérifié avant appel, débité atomiquement | `balance_never_negative_and_debits_are_conserved` (+ 8 tests budget) ; verrou `FOR UPDATE` + `Budget::refreshed` éprouvés par la tranche | `kollega-runtime/src/budget.rs`, `kollega-store/src/driver.rs` | Oui | **Partiel, mais moins qu'avant** : la règle comptable pure est prouvée ; le solde est désormais LU ET VERROUILLÉ en base à chaque pas, jamais repris de l'instantané sérialisé — le débit contre solde périmé est fermé. **Toujours absent** : la vérification AVANT l'appel de modèle (le coût n'est connu qu'après), et un test de concurrence réelle à deux tâches. |
@@ -32,7 +32,7 @@ visible (ADR-0007).
 | # | Où il vit |
 |---|---|
 | 1 | **RLS** (politique + FORCE, rôle sans BYPASSRLS) — le type porte `org_id`, la garantie vient du schéma |
-| 2 | **test** (refus par défaut prouvé) ; l'enforcement structurel attend la couture M3 |
+| 2 | **type** (plus de trait intermédiaire : `drive` ne peut appeler que le vrai moteur, avec la requête complète) + **test** — reste hors couverture : un appel de `ToolRunner` hors de la boucle |
 | 3 | **type** (`AuditRecord` : Intent/Outcome/Abandoned) + **contrainte de schéma** (`tool_call_id`, unicité par appel et par action) + test sur données réelles |
 | 4 | **contrainte de schéma** (GRANT INSERT+SELECT seuls sur `audit_chain` ; unicité d'attestation en 0005 — la double clôture est inexprimable) + **type** (dépôt sans méthode de retrait) + **test** (deux gardes textuelles) |
 | 5 | **type** (`Budget::charge`, `Budget::refreshed`) + **contrainte de schéma** (`CHECK balance_cents >= 0`) |
@@ -52,11 +52,12 @@ visible (ADR-0007).
   4 (pur, spec confirmée par différentiel Rust↔Python en CI),
   7 (assemblage en confinement, verbatim), 11,
   **13 (CI run n°15 : down rend le vierge, re-up reproduit l'état)**.
-- **Promus dans la nuit du 28 au 29/07** : **3** (la séquence d'appels est
-  validée sur la chaîne PERSISTÉE, plus seulement en pur) et **4**
-  (l'ajout seul est éprouvé en CI par le rôle, et la double attestation
-  est devenue impossible).
-- **Prouvés en partie, le reste dépend d'un jalon futur** : 2, 5, 6.
+- **Promus dans la nuit du 28 au 29/07** : **2** (la boucle appelle le vrai
+  moteur avec la requête complète — les bornes à deux étages étaient
+  inertes jusque-là), **3** (la séquence d'appels est validée sur la chaîne
+  PERSISTÉE, plus seulement en pur) et **4** (l'ajout seul est éprouvé en
+  CI par le rôle, et la double attestation est devenue impossible).
+- **Prouvés en partie, le reste dépend d'un jalon futur** : 5, 6.
 - **Aucun test aujourd'hui** : 8, 9, 10, 12 (jalons non commencés).
 
 Les deux dettes de preuve du socle (1 et 13) sont soldées par une CI qui a

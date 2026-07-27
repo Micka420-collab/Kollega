@@ -52,7 +52,7 @@ Le journal ne se contente pas d'être intact : **sa séquence est vérifiée sur
 
 ### Invariants — 13, état résumé
 
-**Prouvés** : **1** (isolation RLS, sensibilité comprise ; le vectoriel attend M5), **3** (deux entrées par appel — validées sur la chaîne *persistée* depuis le 29/07), **4** (chaîne d'audit : ajout seul éprouvé par le rôle en CI, double attestation rendue impossible, spec confirmée par différentiel indépendant), **7** (confinement, corpus 34 cas + proptest), **11** (core sans entrée-sortie), **13** (réversibilité des migrations). **Prouvés en partie** — le niveau pur l'est, l'application complète dépend d'un jalon futur : 2, 5, 6. **Sans test aujourd'hui** : 8, 9, 10, 12 (jalons non commencés). Détail et réserves : [`docs/matrice-invariants.md`](docs/matrice-invariants.md).
+**Prouvés** : **1** (isolation RLS, sensibilité comprise ; le vectoriel attend M5), **2** (tout appel passe par le vrai moteur, requête complète — une limite dure arrête l'appel depuis la boucle), **3** (deux entrées par appel — validées sur la chaîne *persistée*), **4** (chaîne d'audit : ajout seul éprouvé par le rôle en CI, double attestation rendue impossible, spec confirmée par différentiel indépendant), **7** (confinement, corpus 34 cas + proptest), **11** (core sans entrée-sortie), **13** (réversibilité des migrations). **Prouvés en partie** — le niveau pur l'est, l'application complète dépend d'un jalon futur : 5, 6. **Sans test aujourd'hui** : 8, 9, 10, 12 (jalons non commencés). Détail et réserves : [`docs/matrice-invariants.md`](docs/matrice-invariants.md).
 
 ---
 
