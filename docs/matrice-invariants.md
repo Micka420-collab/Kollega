@@ -17,6 +17,38 @@ conditionne doit le faire par une variable que cette garde couvre — sinon
 un futur test se sauterait à jamais sous une variable non surveillée. Les
 deux gardes sont vérifiées par sabotage, témoin positif compris.
 
+## Ce que « vérifié par sabotage » ne garantit pas
+
+**Quatre des cinq gardes écrites dans la nuit du 29/07 avaient un trou, et
+les cinq avaient été « vérifiées par sabotage ».** Il n'y a pas de
+contradiction : j'avais saboté chacune sous la forme exacte qu'elle était
+écrite pour reconnaître. La vérification était circulaire — elle
+confirmait que le code faisait ce que j'avais en tête, jamais qu'il
+couvrait ce à quoi je n'avais pas pensé.
+
+Ce que la relecture *adversariale* a trouvé, en cherchant à contourner
+plutôt qu'à confirmer :
+
+| Garde | Trou | Ce qui passait |
+|---|---|---|
+| `no_placebo_tests` | ne reconnaissait que le littéral `() {}` | corps vide sur deux lignes, `() { }`, corps ne contenant qu'un commentaire |
+| `integration_tests_ran` | ignorait en silence un nom de variable non littéral | `const A = "..."; env::var(A)` — le test se sautait à jamais en CI |
+| `migrations_shape` | plancher de justification comptant tout le fichier | dix lignes de SQL valaient justification d'irréversibilité |
+| `migrations_shape` | `.sql` inclassable ignoré sans un mot | `0008_x.sql`, forme que sqlx sait appliquer, échappait à l'exigence de descente |
+| `orphan_crates` | une arête de manifeste comptait pour un usage | déclarer une dépendance sans écrire une ligne de code faisait passer une crate pour branchée |
+
+Deux conséquences, à ne pas perdre :
+
+1. **Un sabotage écrit par l'auteur de la garde teste l'intention, pas la
+   couverture.** La question utile n'est pas « est-ce que ça rougit quand
+   je casse la chose ? » mais « comment ferais-je pour passer au
+   travers ? ».
+2. **Une garde peut être complète seulement EN COMBINAISON avec une
+   autre**, et ce couplage doit être écrit. `no_placebo_tests` tenait en
+   pratique grâce à `cargo fmt --check`, qui normalise les corps vides ;
+   il suffisait d'assouplir une règle de format, jugée cosmétique, pour
+   rouvrir le trou sans que personne fasse le lien.
+
 ## Sensibilité — quelles preuves ont été vues ÉCHOUER
 
 Un test vert ne prouve rien tant qu'on ne l'a pas vu rouge : il peut

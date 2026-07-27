@@ -81,6 +81,19 @@
 >     stricte et était vide. Corrigée : seul le bloc de commentaire qui
 >     suit le marqueur compte.
 >
+> 13. **Relecture ADVERSARIALE de mes propres gardes : quatre des cinq
+>     avaient un trou.** Toutes avaient pourtant été « vérifiées par
+>     sabotage » — mais je les avais sabotées sous la forme exacte
+>     qu'elles savaient reconnaître, ce qui rendait la vérification
+>     circulaire. En cherchant à les *contourner* : le corps vide écrit
+>     sur deux lignes passait ; un nom de variable donné par une
+>     constante passait ; dix lignes de SQL valaient justification
+>     d'irréversibilité ; un `.sql` mal nommé échappait à l'exigence de
+>     descente ; une simple ligne de manifeste faisait passer une crate
+>     pour branchée. Toutes corrigées, chaque contournement vérifié
+>     rouge. Le détail et la leçon sont en tête de
+>     `docs/matrice-invariants.md`.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
