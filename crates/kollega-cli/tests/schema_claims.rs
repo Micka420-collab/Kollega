@@ -128,7 +128,7 @@ fn backticked_dotted_pairs(text: &str) -> Vec<String> {
         .step_by(2)
         .map(str::trim)
         .filter(|token| {
-            token.chars().filter(|c| *c == '.').count() == 1
+            (1..=2).contains(&token.chars().filter(|c| *c == '.').count())
                 && token
                     .chars()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.')
@@ -168,6 +168,17 @@ fn no_document_names_a_column_that_does_not_exist() {
             continue;
         };
         for token in backticked_dotted_pairs(&text) {
+            // Forme QUALIFIÉE `public.tasks.state` : on ne garde que les
+            // deux derniers segments. Sans cela elle échappait au contrôle,
+            // la découpe exigeant un point unique — évasion trouvée en
+            // attaquant cette garde plutôt qu'en la confirmant.
+            let token = token
+                .rsplit_once('.')
+                .map(|(prefix, column)| {
+                    let table = prefix.rsplit_once('.').map_or(prefix, |(_, t)| t);
+                    format!("{table}.{column}")
+                })
+                .unwrap_or(token);
             let (table, column) = token.split_once('.').expect("un point");
             let Some(columns) = schema.get(table) else {
                 continue; // pas une table : hors sujet.
@@ -208,6 +219,21 @@ fn no_document_names_a_column_that_does_not_exist() {
         };
         let lowered = text.to_lowercase();
         let mut from = 0;
+        // Déclencheur STRICT : le mot « table » immédiatement suivi de
+        // l'accent grave.
+        //
+        // J'ai essayé de l'élargir — accepter quelques mots entre les deux,
+        // pour attraper « la table principale `x` ». L'essai a produit cinq
+        // faux positifs d'un coup, dont « toute table portant `org_id` », où
+        // le jeton désigne une COLONNE. Une garde qui crie à tort finit
+        // désactivée, et l'on aurait échangé une protection réelle contre
+        // une fausse. Le déclencheur reste donc étroit.
+        //
+        // Ce qu'il ne voit pas, et c'est écrit plutôt que masqué : un nom de
+        // table cité sans le mot « table » juste avant — « le journal vit
+        // dans `audit_log` » — passe. Aucune règle textuelle ne distingue
+        // ce cas d'une mention de colonne ou de fonction sans produire ce
+        // bruit-là.
         while let Some(at) = lowered[from..].find("table `") {
             let start = from + at + "table `".len();
             from = start;

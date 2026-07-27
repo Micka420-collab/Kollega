@@ -28,6 +28,23 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Concatène le texte de tous les `.rs` d'un répertoire, récursivement.
+fn append_rust_sources(dir: &Path, out: &mut String) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            append_rust_sources(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            if let Ok(text) = fs::read_to_string(&path) {
+                out.push_str(&text);
+            }
+        }
+    }
+}
+
 /// Noms suivant un motif donné, entre guillemets : `env_var("X")`,
 /// `env = "X"`.
 fn names_after(source: &str, needle: &str) -> BTreeSet<String> {
@@ -53,8 +70,31 @@ fn names_after(source: &str, needle: &str) -> BTreeSet<String> {
 #[test]
 fn the_deployment_provides_every_variable_the_binary_reads() {
     let root = repo_root();
-    let main_rs = fs::read_to_string(root.join("crates/kollega-cli/src/main.rs"))
-        .expect("main.rs doit exister");
+    // TOUTES les sources livrées, pas seulement `main.rs`.
+    //
+    // La première version ne lisait que `main.rs` : une variable
+    // d'environnement lue depuis un autre fichier du binaire — ou depuis
+    // n'importe quelle bibliothèque qu'il embarque — lui échappait
+    // entièrement. Vérifié en attaquant la garde plutôt qu'en la
+    // confirmant : une lecture d'environnement placée dans un fichier
+    // voisin passait sans un mot, alors que la même dans `main.rs` faisait
+    // rougir. Une garde dont le périmètre est plus étroit que le risque
+    // protège seulement l'endroit où l'on regardait déjà.
+    //
+    // (Le nom de la variable d'essai n'est pas cité ici : `integration_
+    // tests_ran` traque ce motif dans les fichiers de test, et l'écrire
+    // ferait rougir cette garde-là — elle m'a attrapé ainsi.)
+    let mut sources = String::new();
+    for entry in fs::read_dir(root.join("crates")).expect("lecture de crates/") {
+        let path = entry.expect("entrée lisible").path().join("src");
+        append_rust_sources(&path, &mut sources);
+    }
+    assert!(
+        sources.len() > 10_000,
+        "balayage suspect : {} octets de source lus",
+        sources.len()
+    );
+    let main_rs = sources;
 
     let mut required = names_after(&main_rs, "env_var(");
     required.extend(names_after(&main_rs, "env = "));
