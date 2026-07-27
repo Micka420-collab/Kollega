@@ -48,9 +48,17 @@ fn collect_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Occurrences de `SET <mot>` où `<mot>` n'est pas `LOCAL`, en ignorant
-/// `set_config`, `OFFSET`, `RESET`, etc. (frontière de mot à gauche, blanc
-/// obligatoire à droite).
+/// v2 — Occurrences DANGEREUSES de `SET <mot>` sans `LOCAL`.
+///
+/// La v1 bannissait tout `SET <mot>` hors `LOCAL` : elle ne pouvait pas
+/// survivre au premier `UPDATE … SET colonne = …` légitime — prédit en
+/// revue, advenu à la tranche verticale. La menace réelle de l'invariant 1
+/// est le changement de configuration ou d'identité à portée SESSION (il
+/// survivrait au retour de la connexion dans le pool) : sont interdits,
+/// sans `LOCAL` — `SET <guc.pointée>` (dont `app.current_org`),
+/// `SET SESSION …`, `SET ROLE …`, `SET search_path …`. Les formes SQL
+/// d'affectation (`UPDATE … SET col`, `ALTER TABLE … SET NOT NULL`,
+/// `SET DEFAULT`) ne touchent pas la session : autorisées.
 fn set_without_local(haystack: &str) -> bool {
     let upper = haystack.to_ascii_uppercase();
     let bytes = upper.as_bytes();
@@ -73,13 +81,44 @@ fn set_without_local(haystack: &str) -> bool {
         let next_word: String = after
             .trim_start()
             .chars()
-            .take_while(|c| c.is_ascii_alphabetic())
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '.')
             .collect();
-        if next_word != "LOCAL" {
+        let dangerous = next_word != "LOCAL"
+            && (next_word.contains('.')
+                || next_word == "SESSION"
+                || next_word == "ROLE"
+                || next_word == "SEARCH_PATH");
+        if dangerous {
             return true;
         }
     }
     false
+}
+
+#[test]
+fn guard_distinguishes_session_set_from_sql_assignment() {
+    // Dangereux : configuration ou identité de session, sans LOCAL.
+    for hit in [
+        "SET app.current_org = 'x'",
+        "set session characteristics as transaction",
+        "SET ROLE kollega_migrate",
+        "SET search_path TO public",
+        "SET myext.tenant = $1",
+    ] {
+        assert!(set_without_local(hit), "aurait dû être signalé : {hit}");
+    }
+    // Légitime : affectations SQL et formes LOCAL.
+    for ok in [
+        "UPDATE tasks SET state = $2, updated_at = now()",
+        "UPDATE credits SET balance_cents = $2",
+        "ALTER TABLE users ALTER COLUMN email SET NOT NULL",
+        "ALTER COLUMN x SET DEFAULT 0",
+        "SET LOCAL app.current_org = 'x'",
+        "OFFSET 3",
+        "set_config('a.b', $1, true)",
+    ] {
+        assert!(!set_without_local(ok), "faux positif : {ok}");
+    }
 }
 
 #[test]

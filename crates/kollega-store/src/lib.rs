@@ -9,6 +9,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod driver;
+
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -22,6 +24,22 @@ pub enum StoreError {
     /// Erreur d'application des migrations.
     #[error("erreur de migration : {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
+    /// Tâche introuvable dans le contexte d'organisation courant.
+    #[error("tâche introuvable dans ce contexte d'organisation")]
+    TaskNotFound,
+    /// Donnée persistée illisible ou incohérente — à traiter, pas à deviner.
+    #[error("état persistant corrompu : {0}")]
+    CorruptState(String),
+    /// La vérification de la chaîne d'audit a trouvé une rupture.
+    #[error("chaîne d'audit invalide : {0}")]
+    ChainBroken(String),
+    /// Erreur comptable (budget) au rechargement ou à l'amorçage.
+    #[error("erreur comptable : {0}")]
+    Accounting(String),
+    /// Un autre écrivain a pris la hauteur de chaîne visée : le pas entier
+    /// est à rejouer (violation d'unicité sur `(org_id, height)`).
+    #[error("conflit d'écriture de chaîne : hauteur prise, pas à rejouer")]
+    ChainConflict,
 }
 
 /// Accès à la base pour l'application (rôle `kollega_app`, sans `BYPASSRLS`).

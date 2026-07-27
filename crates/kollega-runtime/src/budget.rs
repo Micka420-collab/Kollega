@@ -74,6 +74,25 @@ impl Budget {
         })
     }
 
+    /// Recharge le solde d'organisation depuis l'état PERSISTANT, en
+    /// conservant plafond et consommé de la tâche.
+    ///
+    /// C'est la règle de `docs/credits-concurrence.md` rendue praticable :
+    /// le `org_balance` embarqué dans un état sérialisé est un INSTANTANÉ —
+    /// re-facturer contre lui, c'est débiter contre un solde périmé que
+    /// d'autres tâches ont pu consommer. Toute reprise reconstruit le budget
+    /// avec le solde LU (et verrouillé) en base dans la même transaction.
+    pub fn refreshed(self, org_balance: Cents) -> Result<Self, BudgetError> {
+        if org_balance.0 < 0 {
+            return Err(BudgetError::NegativeState);
+        }
+        Ok(Budget {
+            ceiling: self.ceiling,
+            consumed: self.consumed,
+            org_balance,
+        })
+    }
+
     /// Coût déjà facturé sur cette tâche.
     #[must_use]
     pub fn consumed(&self) -> Cents {

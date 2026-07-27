@@ -970,7 +970,14 @@ dependencies = [
 name = "kollega-store"
 version = "0.1.0"
 dependencies = [
+ "hex",
+ "kollega-audit",
+ "kollega-core",
+ "kollega-policy",
+ "kollega-runtime",
  "log",
+ "serde_json",
+ "sha2",
  "sqlx",
  "thiserror",
  "tokio",

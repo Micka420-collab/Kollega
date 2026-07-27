@@ -72,7 +72,10 @@ async fn tenant_isolation_holds_and_the_test_is_sensitive() {
     let mut admin = PgConnection::connect(&migrate_url).await.expect("admin");
     // TRUNCATE n'est pas soumis aux politiques RLS : le rôle de migration
     // (propriétaire des tables, superutilisateur en CI) peut nettoyer.
-    sqlx::query("TRUNCATE users, organizations")
+    // CASCADE : depuis la migration 0003, tasks/audit_chain/audit_content/
+    // credits référencent organizations — un TRUNCATE nu échouerait sur les
+    // clés étrangères (trouvaille d'intégration de la tranche verticale).
+    sqlx::query("TRUNCATE users, organizations CASCADE")
         .execute(&mut admin)
         .await
         .expect("nettoyage");
