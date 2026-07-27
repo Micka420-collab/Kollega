@@ -1,6 +1,16 @@
-# ADR 0001 — Monolithe modulaire
+# ADR-0004 — Monolithe modulaire
 
 Date : 2026-07-26 · Statut : accepté
+
+> **Relu contre le code le 29/07/2026 — trois corrections.** Le titre
+> annonçait « ADR 0001 » (renumérotation du pivot non répercutée, comme
+> pour l'ADR-0003). Deux références d'invariant dataient de la
+> numérotation v1 : l'absence d'entrée-sortie dans le domaine est
+> l'invariant **11**, pas le 9 — le 9 exige qu'une procédure soit validée
+> avant d'entrer en mémoire. Enfin, le cadrage suppose une exécution sur
+> le serveur du client : prémisse d'avant [ADR-0001](0001-pivot-plateforme-multi-tenant.md).
+> La décision — un binaire, dix crates, graphe orienté vérifié en CI —
+> tient telle quelle.
 
 ## Contexte
 
@@ -19,7 +29,7 @@ continue :
 `core` → `policy`, `audit`, `memory`, `tools`, `model` → `runtime` →
 `store`, `api` → `cli`. Aucune flèche en sens inverse.
 
-Le domaine (`kollega-core`) ne dépend d'aucune entrée-sortie (invariant 9) :
+Le domaine (`kollega-core`) ne dépend d'aucune entrée-sortie (invariant 11) :
 la frontière qu'un découpage en services ferait payer en réseau, on la fait
 payer au compilateur, gratuitement.
 
@@ -39,4 +49,5 @@ payer au compilateur, gratuitement.
 - **Modulith avec framework d'orchestration interne** : dépendance de plus,
   valeur nulle tant qu'il n'y a qu'un seul flux d'exécution.
 - **Binaire unique sans crates** : perd les garanties de frontière à la
-  compilation (invariants 5 et 9).
+  compilation (invariants **7 et 11** ; l'ADR d'origine citait « 5 et 9 »,
+  numérotation v1 — le 5 est le crédit, le 9 la validation en mémoire).

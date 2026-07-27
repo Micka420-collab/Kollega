@@ -78,6 +78,45 @@ fn looks_like_a_test_name(candidate: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
+/// Le numéro d'un ADR, dans son titre, est celui de son fichier.
+///
+/// Deux ADR portaient un titre faux — `0003` s'annonçait « ADR 0002 », et
+/// `0004` « ADR 0001 » : les fichiers avaient été renumérotés au pivot sans
+/// que leurs en-têtes suivent. Ce n'est pas cosmétique. Les ADR se citent
+/// entre eux par numéro, et un document qui se présente sous le numéro d'un
+/// autre envoie lire la mauvaise décision — au moment précis où quelqu'un
+/// cherche pourquoi le système est fait ainsi.
+#[test]
+fn every_adr_title_matches_its_file_number() {
+    let dir = repo_root().join("docs/adr");
+    let mut checked = 0;
+    let mut wrong = Vec::new();
+    for entry in fs::read_dir(&dir).expect("lecture de docs/adr/").flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Some(number) = name.split('-').next().filter(|n| n.len() == 4) else {
+            continue;
+        };
+        let text = fs::read_to_string(&path).expect("lecture d'un ADR");
+        let title = text.lines().next().unwrap_or_default();
+        checked += 1;
+        // « ADR-0004 » ou « ADR 0004 » : la forme du séparateur importe peu,
+        // le numéro non.
+        if !title.contains(number) {
+            wrong.push(format!("{name} : titre « {title} »"));
+        }
+    }
+    assert!(checked >= 7, "balayage suspect : {checked} ADR trouvés");
+    assert!(
+        wrong.is_empty(),
+        "ADR dont le titre annonce un autre numéro que son fichier : \
+         {wrong:?}. Les ADR se citent entre eux par numéro — un titre faux \
+         envoie lire la mauvaise décision."
+    );
+}
+
 #[test]
 fn every_test_named_in_the_matrix_actually_exists() {
     let root = repo_root();
