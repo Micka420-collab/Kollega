@@ -140,6 +140,11 @@ jobs:
         # Tout échec est publié dans le RÉSUMÉ du job (page publique de la
         # run) : les journaux bruts exigent un jeton, le résumé non.
         run: |
+          # TOUTE la sortie de l'étape est capturée, pas seulement les
+          # échecs ciblés : un diagnostic vide (run n°41) ne dit rien, et
+          # un rouge illisible ne vaut guère mieux qu'un vert douteux.
+          exec > >(tee reversibilite-out.txt) 2>&1
+          set -x
           summary() { printf '%s\n' "$*" >> "$GITHUB_STEP_SUMMARY"; }
           capture() {
             local label="$1"; shift
@@ -206,6 +211,7 @@ jobs:
         if: always()
         run: |
           mkdir -p diag
+          cp -f reversibilite-out.txt diag/ 2>/dev/null || true
           cp -f echec.txt step-out.txt server-version.txt diag/ 2>/dev/null || true
           cp -f vierge.* apres-up-1.* apres-down.* apres-up-2.* delta-*.txt diag/ 2>/dev/null || true
           cd diag
