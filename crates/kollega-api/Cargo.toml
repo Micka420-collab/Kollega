@@ -9,6 +9,8 @@ argon2.workspace = true
 axum.workspace = true
 kollega-store = { path = "../kollega-store" }
 thiserror.workspace = true
+# `serve_until` prend une socket tokio et rend la main sur un futur d'arrêt.
+tokio.workspace = true
 
 # Le seul test qui DÉMARRE réellement le serveur (tests/health_endpoint.rs)
 # a besoin d'un exécuteur et d'une socket ; `sqlx` sert uniquement à

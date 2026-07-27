@@ -52,6 +52,39 @@ enum AuditCommand {
     },
 }
 
+/// Attend le premier signal d'arrêt : `Ctrl-C` ou, sous Unix, `SIGTERM`.
+///
+/// `SIGTERM` est celui qui compte en exploitation — c'est ce qu'envoient
+/// `docker stop`, systemd et l'ordonnanceur d'un hébergeur avant de
+/// remplacer un conteneur. `Ctrl-C` seul suffirait au poste de
+/// développement et laisserait la production se faire tuer net.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::error!(erreur = %e, "écoute de Ctrl-C impossible");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut flux) => {
+                flux.recv().await;
+            }
+            Err(e) => tracing::error!(erreur = %e, "écoute de SIGTERM impossible"),
+        }
+    };
+    // Sur les plateformes sans SIGTERM, cette branche n'arrive jamais : le
+    // `select!` se réduit alors à Ctrl-C, ce qui est le comportement voulu.
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => tracing::info!("Ctrl-C reçu, arrêt demandé"),
+        () = terminate => tracing::info!("SIGTERM reçu, arrêt demandé"),
+    }
+}
+
 fn env_var(name: &str) -> anyhow::Result<String> {
     std::env::var(name).with_context(|| format!("la variable d'environnement {name} est absente"))
 }
@@ -75,9 +108,10 @@ async fn main() -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("impossible d'écouter sur {listen}"))?;
             tracing::info!(%listen, "kollega démarre");
-            axum::serve(listener, app)
+            kollega_api::serve_until(listener, app, shutdown_signal())
                 .await
                 .context("le serveur HTTP s'est arrêté en erreur")?;
+            tracing::info!("arrêt propre : plus aucune requête en vol");
         }
         Command::Migrate => {
             let migrate_url = env_var("KOLLEGA_MIGRATE_DATABASE_URL")?;
