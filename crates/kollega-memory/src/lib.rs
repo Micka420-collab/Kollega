@@ -4,8 +4,6 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles() {}
-}
+// Aucun test, et c'est exact : cette crate est vide. Le `crate_compiles()`
+// qui tenait cette place jusqu'au 29/07 laissait croire à une couverture
+// là où il n'y a rien à couvrir.

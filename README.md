@@ -11,7 +11,9 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 ## État réel au 28/07/2026
 
-`cargo test --workspace` : **197 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
+`cargo test --workspace` : **194 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
+
+Ce nombre a **baissé** le 29/07, et c'est un progrès : cinq `crate_compiles() {}` — un par crate, corps vide — comptaient comme des tests verts sans rien prouver de plus que le compilateur, qui compile la crate de toute façon. Ils sont supprimés, et une garde refuse désormais tout test au corps vide. Un chiffre qu'on gonfle est un chiffre auquel on ne peut plus se fier.
 
 **Et l'on sait qu'ils ont tourné.** Sept tests exigent une base réelle et se sautent poliment sans elle — commodité en local, mais le plus beau trou du dispositif de preuve : la base ne leur est fournie que par *une ligne* de `ci.yml`, dont la disparition rendrait sept tests verts en ne prouvant plus rien. Depuis le 29/07, se sauter **en intégration continue est un échec**, et tout test qui se conditionne doit le faire par une variable que cette garde couvre — sans quoi un futur test se sauterait à jamais sous une variable que personne ne surveille. Un vert de complaisance est pire qu'un rouge : il s'affiche comme une preuve.
 

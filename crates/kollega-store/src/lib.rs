@@ -152,8 +152,6 @@ pub async fn set_app_role_password(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles() {}
-}
+// Retiré le 29/07 : un `crate_compiles()` vide comptait comme un test vert
+// sans rien prouver. La persistance est éprouvée sur base réelle par les
+// tests d'intégration de ce crate.

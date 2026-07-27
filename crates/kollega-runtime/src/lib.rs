@@ -14,8 +14,6 @@ pub use machine::{
     drive, ApprovalDecision, AuditEvent, ModelProvider, PlannedAction, TaskState, ToolRunner,
 };
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles() {}
-}
+// Retiré le 29/07 : un `crate_compiles()` vide comptait comme un test vert
+// sans rien prouver de plus que le compilateur. Le runtime est éprouvé par
+// `budget.rs` et `machine.rs`.
