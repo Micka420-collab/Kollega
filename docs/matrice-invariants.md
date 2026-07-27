@@ -22,6 +22,29 @@ Aucune conclusion flatteuse : un invariant dont le test existe mais n'a
 | 12 | Aucune suppression physique (effacement logique + purge tracée) | — | Schéma : `deleted_at` sur organizations/users (seules tables existantes) | **NON — AUCUN test de code** | Le schéma porte `deleted_at` ; aucune logique de purge ni de garde contre le `DELETE` physique n'est écrite — et `GRANT DELETE` est accordé à `kollega_app` (RGPD, jalon ultérieur). |
 | 13 | Toute migration réversible | Job CI `reversibilite` : up → down → diff avec l'état VIERGE → re-up → diff (schéma pg_dump normalisé, rôles, extensions, ACL effective), cluster dédié | `.github/workflows/ci.yml` | **OUI — CI, 28/07/2026, run n°15** | **Prouvé** : le down rend l'état vierge exact, le re-up reproduit l'état à l'identique. Cinq passages rouges d'abord — un réglage réel (comparer l'ACL EFFECTIVE : un `nspacl` matérialisé après GRANT+REVOKE n'est pas le texte du NULL initial) et un faux positif d'outillage (jeton aléatoire `\restrict` de pg_dump ≥ 18) ; dossier archivé sur la branche `ci-diagnostic`. Réserve : prouvé via psql — l'outillage applicatif (`sqlx::migrate!`) n'a toujours aucun chemin de descente. |
 
+## Où vit chaque invariant (bloc 4 — colonne détachée pour lisibilité)
+
+Valeurs : **type** / **contrainte de schéma** / **RLS** / **test** /
+***prose seulement***. Un invariant en prose seulement est un invariant
+qu'AUCUN mécanisme n'applique — cette rubrique existe pour le rendre
+visible (ADR-0007).
+
+| # | Où il vit |
+|---|---|
+| 1 | **RLS** (politique + FORCE, rôle sans BYPASSRLS) — le type porte `org_id`, la garantie vient du schéma |
+| 2 | **test** (refus par défaut prouvé) ; l'enforcement structurel attend la couture M3 |
+| 3 | **type** (`AuditRecord` : Intent/Outcome/Abandoned) + test — pont chaîne↔machine encore partiel |
+| 4 | **contrainte de schéma** (GRANT INSERT+SELECT seuls sur `audit_chain`, prouvé en CI) + **type** (dépôt sans méthode de retrait, garde textuelle) |
+| 5 | **type** (`Budget::charge`, `Budget::refreshed`) + **contrainte de schéma** (`CHECK balance_cents >= 0`) |
+| 6 | **type** (`Budget`, `CostCeiling`) + test |
+| 7 | **type** (`Segment`/`CompiledPrompt`, confinement verbatim) + test (corpus + proptest) |
+| 8 | ***prose seulement*** (M2 non commencé) — `ApiKey` expurgée existe déjà pour les clés de modèle |
+| 9 | ***prose seulement*** (M5 non commencé) |
+| 10 | ***prose seulement*** (M6 non commencé) |
+| 11 | **test** (garde du graphe de dépendances, toutes sections) |
+| 12 | **contrainte de schéma** (pas de GRANT DELETE sur `tasks` ni `audit_chain` ; DELETE sur le seul contenu purgeable) + purge nommée `purge_org` — la purge TRACÉE reste partielle |
+| 13 | **test** (job CI `reversibilite` : down rend le vierge, re-up reproduit) |
+
 ## Lecture d'ensemble — sans complaisance
 
 - **Prouvés aujourd'hui** : **1 (CI du 28/07/2026, sensibilité démontrée

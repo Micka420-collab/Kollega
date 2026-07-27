@@ -1,6 +1,6 @@
 # Kollega
 
-Plateforme SaaS d'agents IA **gouvernés** pour TPE et PME françaises (5–200 salariés, sans DSI) : l'entreprise s'inscrit, connecte Microsoft 365 ou Google Workspace, choisit un agent prêt à l'emploi dans un catalogue, et l'agent travaille — journal d'audit inaltérable, coût affiché avant et après, validation humaine par seuil, hébergement français, RGPD natif.
+Plateforme SaaS d'agents IA **gouvernés** pour TPE et PME françaises (5–200 salariés, sans DSI) : l'entreprise s'inscrit, connecte Microsoft 365 ou Google Workspace, choisit un agent prêt à l'emploi dans un catalogue, et l'agent travaille — journal d'audit inaltérable, coût affiché avant et après, validation humaine par seuil. L'hébergement sur cloud français et la conformité RGPD de sous-traitant sont des **décisions d'architecture prises** ([ADR-0001](docs/adr/0001-pivot-plateforme-multi-tenant.md)), **non réalisées** : rien n'est hébergé nulle part aujourd'hui, et aucune obligation de sous-traitant n'est en place — elles arrivent avec M7.
 
 Ce n'est pas un chatbot ni un studio générique. La constitution du projet (produit, invariants, architecture, discipline) est dans [`CLAUDE.md`](CLAUDE.md) ; les décisions sont tracées dans [`docs/adr/`](docs/adr/).
 
