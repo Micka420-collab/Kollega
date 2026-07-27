@@ -23,6 +23,29 @@ fn migrate_url() -> Option<String> {
     std::env::var("TEST_MIGRATE_DATABASE_URL").ok()
 }
 
+/// Exige un refus par PRIVILÈGE, et pas un échec quelconque.
+///
+/// Un simple `is_err()` serait vert sur une faute de frappe dans le nom de
+/// table, un refus de clé étrangère ou une transaction déjà avortée —
+/// autant de façons de ne rien prouver de l'ajout seul, qui est pourtant
+/// tout l'enjeu ici. Le code 42501 dit précisément « le rôle n'a pas le
+/// droit », ce qui est l'affirmation à défendre.
+fn assert_denied_by_privilege<T>(result: Result<T, sqlx::Error>, quoi: &str) {
+    let erreur = result
+        .err()
+        .unwrap_or_else(|| panic!("{quoi} : la requête a RÉUSSI, elle devait être refusée"));
+    let code = erreur
+        .as_database_error()
+        .and_then(|e| e.code())
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(
+        code, "42501",
+        "{quoi} : refus attendu par PRIVILÈGE (42501 insufficient_privilege), \
+         reçu autre chose : {erreur}"
+    );
+}
+
 fn app_url_from(migrate_url: &str) -> String {
     use sqlx::postgres::PgConnectOptions;
     use std::str::FromStr;
@@ -351,10 +374,7 @@ async fn the_vertical_slice_goes_through() {
     let denied = sqlx::query("DELETE FROM audit_chain WHERE action = 'fork_probe'")
         .execute(&mut *tx)
         .await;
-    assert!(
-        denied.is_err(),
-        "kollega_app ne doit pas pouvoir supprimer dans la chaîne"
-    );
+    assert_denied_by_privilege(denied, "kollega_app supprimant dans la chaîne");
     drop(tx);
     sqlx::query("DELETE FROM audit_chain WHERE org_id = $1 AND action = 'fork_probe'")
         .bind(org)
@@ -456,12 +476,11 @@ async fn the_vertical_slice_goes_through() {
 
     // Le rôle applicatif ne peut ni défaire ni réécrire un effet.
     let mut tx = db.org_transaction(org).await.expect("tx effets 2");
-    assert!(
+    assert_denied_by_privilege(
         sqlx::query("DELETE FROM tool_call_effects")
             .execute(&mut *tx)
-            .await
-            .is_err(),
-        "un effet realisé ne se supprime pas"
+            .await,
+        "un effet réalisé ne se supprime pas",
     );
     drop(tx);
 

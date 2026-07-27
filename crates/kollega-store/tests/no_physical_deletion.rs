@@ -110,10 +110,27 @@ async fn the_application_role_cannot_physically_delete_anything_but_purgeable_co
         let attempt = sqlx::query(&format!("DELETE FROM {table}"))
             .execute(&mut *tx)
             .await;
-        assert!(
-            attempt.is_err(),
-            "kollega_app ne doit pas pouvoir supprimer dans {table} — \
-             l'effacement est LOGIQUE (deleted_at), jamais physique"
+        let erreur = attempt.err().unwrap_or_else(|| {
+            panic!(
+                "kollega_app ne doit pas pouvoir supprimer dans {table} — \
+                 l'effacement est LOGIQUE (deleted_at), jamais physique"
+            )
+        });
+        // POURQUOI l'échec, pas seulement qu'il ait lieu. Un `is_err()` seul
+        // passerait sur une faute de frappe dans le nom de table (42P01) ou
+        // sur un refus de CLÉ ÉTRANGÈRE (23503) — pour `organizations`, dont
+        // dépendent quatre tables, ce second cas est tout sauf théorique. On
+        // aurait alors une preuve verte de l'invariant 12 qui ne dirait rien
+        // des privilèges, c'est-à-dire du mécanisme qui le porte.
+        let code = erreur
+            .as_database_error()
+            .and_then(|e| e.code())
+            .unwrap_or_default()
+            .to_string();
+        assert_eq!(
+            code, "42501",
+            "la suppression dans {table} devait être refusée par PRIVILÈGE \
+             (42501 insufficient_privilege), pas pour une autre raison : {erreur}"
         );
         drop(tx);
     }
