@@ -1,5 +1,34 @@
 # Questions des sessions autonomes
 
+## 29/07 — durcissement possible de l'invariant 7, NON appliqué
+
+`CompiledPrompt` a ses trois champs **publics**. La garantie « le contenu
+externe ne peut alimenter que `documents` » vient donc de la fonction
+`compile`, pas du type : rien n'empêche d'écrire à la main un
+`CompiledPrompt { system: contenu_hostile, … }`.
+
+Ce n'est **pas** un écart entre la documentation et le code — j'ai vérifié,
+aucun document ne prétend le contraire, et le modèle de menace attribue
+correctement la garantie à `compile`. Dans tout le dépôt, `CompiledPrompt`
+n'est construit que par `compile`. La faiblesse est donc latente.
+
+Elle deviendra réelle le jour où un `ModelProvider` écrira un corps de
+requête : ce sera le premier code hors du domaine à manipuler ces trois
+champs.
+
+**Le durcissement possible** : champs privés + accesseurs, `compile` comme
+unique constructeur — exactement ce qui a été fait pour `ChainedEntry`, et
+ce que prescrit l'ADR-0007 (« le type qui rend sa violation
+inexprimable »).
+
+**Pourquoi je ne l'applique pas seul** : c'est une modification d'API
+publique du domaine, et le précédent `ChainedEntry` a été traité comme une
+décision à toi (bloc 3c, appliqué sur autorisation explicite). Une réserve
+à connaître : `Deserialize` resterait un chemin de construction, et la
+provenance étant perdue après compilation, aucune validation ne peut la
+reconstituer — le durcissement fermerait la construction accidentelle, pas
+toutes les constructions.
+
 ## 29/07 — choix réversibles pris seul (reprise de boucle)
 
 1. **`sqlx` et `tokio` aux dev-dependencies de `kollega-api`.** Nécessaires

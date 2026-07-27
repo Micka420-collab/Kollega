@@ -454,6 +454,44 @@ mod tests {
         );
     }
 
+    /// Les DEUX autres plafonds de l'ADR-0006, jamais éprouvés jusqu'au
+    /// 29/07.
+    ///
+    /// Le test voisin ne couvrait que la mémoire. Or l'ADR pose trois
+    /// bornes, et les itérations sont un multiplicateur de TEMPS DE CALCUL
+    /// aussi direct que la mémoire en est un d'allocation : une empreinte
+    /// forgée à `t=1000` immobiliserait un cœur pendant des dizaines de
+    /// secondes à chaque tentative de connexion, sans rien allouer
+    /// d'anormal. Le plafond mémoire ne l'arrête pas.
+    ///
+    /// `MAX_ITERATIONS` et `MAX_PARALLELISM` existaient donc sans qu'aucun
+    /// rouge ne défende leur disparition.
+    #[test]
+    fn absurd_iterations_and_parallelism_are_rejected_too() {
+        let stored = hash_password("x").unwrap();
+
+        let forged = stored.replace("t=2,", "t=1000,");
+        assert!(forged.contains("t=1000,"), "forge d'itérations ratée");
+        let started = std::time::Instant::now();
+        assert_eq!(
+            check_password("x", &forged),
+            Err(PasswordError::InvalidStoredHash),
+            "un nombre d'itérations absurde doit être refusé par la BORNE"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(200),
+            "le refus doit précéder tout calcul — sinon la borne ne défend rien"
+        );
+
+        let forged = stored.replace(",p=1$", ",p=64$");
+        assert!(forged.contains(",p=64$"), "forge de parallélisme ratée");
+        assert_eq!(
+            check_password("x", &forged),
+            Err(PasswordError::InvalidStoredHash),
+            "un parallélisme absurde doit être refusé par la BORNE"
+        );
+    }
+
     #[test]
     fn rehash_produces_current_profile() {
         // Le re-hachage recommandé par ValidNeedsRehash produit bien le
