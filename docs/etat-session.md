@@ -1,11 +1,16 @@
 # État de session — mis à jour après chaque bloc
 
-> **Nuit du 28 au 29/07/2026 — session en boucle auto-cadencée : les six
-> priorités du brief sont FAITES.** Rapport complet :
-> `docs/rapport-nuit-2026-07-29.md`. Dernière CI verte : n°33.
-> Reste ouvert : coût réel non mesuré (pas de clé d'API), `PolicyEngine` de
-> la machine encore réduit au nom d'outil, double attestation détectée mais
-> non empêchée lors d'une restauration partielle.
+> **Nuit du 28 au 29/07/2026 — session en boucle auto-cadencée.** Les six
+> priorités du brief sont faites, PUIS quatre invariants ont été promus
+> (2, 5 partiellement, 6, 12) et sept trouvailles d'intégration
+> consignées. **Neuf invariants sur treize sont prouvés par un test
+> exécuté.** Rapport complet et à jour :
+> `docs/rapport-nuit-2026-07-29.md`. Dernière CI verte : **n°45**.
+>
+> Reste ouvert et appartient à Micka : le coût réel (pas de clé d'API),
+> l'invariant 5 « vérifié AVANT l'appel de modèle » (trois options dans
+> `questions-nuit.md`), l'effacement logique jamais écrit, et
+> `ToolRunner` qui reste un trait public.
 
 
 Session en cours : 28/07/2026, deuxième session de jour (suite directe).
