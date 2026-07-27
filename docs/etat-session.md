@@ -279,6 +279,23 @@
 >     **Hypothèse, pas certitude** : le rouge inexpliqué de la run n°41,
 >     imputé à l'époque à l'infrastructure, pourrait venir de là.
 >
+> 29. **Audit de concurrence clos, et deux angles propres.** Tous les
+>     autres tests de base bornent leurs opérations par `org_id`, y compris
+>     l'altération volontaire de chaîne d'`audit_verify_command` ; les deux
+>     seules requêtes sans portée sont les assertions de refus par
+>     privilège, où l'absence de portée est **voulue** — elles prouvent que
+>     le rôle ne peut rien supprimer, nulle part. Seul `rls_isolation`
+>     était en cause. Les proptest sont tous configurés entre 1 000 et
+>     4 000 cas, loin du défaut de 256. Le générateur du différentiel
+>     couvre bien les pièges : alphabet hostile pour les textes **et les
+>     clés d'objet**, un caractère sur huit tiré de tout l'espace Unicode,
+>     entiers biaisés vers `i64::MIN`/`MAX`.
+>     **Rien trouvé sur ces trois angles, et c'est dit tel quel.**
+> 30. **`docs/README.md`** : index distinguant ce qui fait autorité, les
+>     instantanés datés jamais mis à jour, et les hypothèses à confronter.
+>     Chaque entrée nomme **ce qui la tient** — un document sans mécanisme
+>     derrière lui se reconnaît alors d'un coup d'œil.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
