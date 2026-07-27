@@ -1,5 +1,45 @@
 # Questions des sessions autonomes
 
+## 29/07 — `kollega-model` est écrit et branché nulle part (constat, puis question)
+
+**Le constat, vérifié et non discutable** : aucune crate ne dépend de
+`kollega-model`. Ses 273 lignes — contrat `ModelProvider` réel, `ApiKey`
+expurgée, quatre modes d'échec, facturation en jetons — compilent, ont
+leurs tests verts, et **aucun chemin d'exécution ne les atteint**. La
+boucle appelle un autre port, homonyme, déclaré dans `kollega-runtime`,
+qui ne reçoit **qu'un numéro d'itération** : ni prompt, ni estimation.
+C'est le même défaut que le trait `PolicyEngine` supprimé la nuit
+précédente — un port intermédiaire qui transporte moins que le contrat
+réel, et rend donc les garanties du contrat inertes. Une garde le tient
+désormais à jour dans les deux sens
+(`kollega-cli/tests/orphan_crates.rs`).
+
+**Ce que cela coûte, concrètement, sur deux invariants :**
+
+- **Invariant 7.** Il est prouvé à l'assemblage (les trois origines sont
+  non-confondables dans le type). En aval, `CompiledPrompt` expose trois
+  `String` publiques et la non-concaténation n'est qu'un commentaire de
+  documentation. Ce n'est pas grave *aujourd'hui* — il n'existe aucun
+  appelant à discipliner — mais ça le devient à la seconde où un vrai
+  fournisseur écrit un corps de requête HTTP.
+- **Invariant 5.** La question ouverte ci-dessous (« vérifié AVANT »)
+  a déjà la moitié de sa réponse posée dans le code mort :
+  `ModelRequest` porte un champ `estimate: TokenEstimate`. L'option 1
+  (réservation) n'est donc pas à concevoir, elle est à brancher.
+
+**La question, que je ne tranche pas** : brancher le vrai contrat dans la
+boucle suppose de décider **d'où vient le prompt à chaque itération** —
+instruction système du modèle d'agent, requête de l'utilisateur, contenu
+externe des résultats d'outils. C'est la conception de la boucle d'agent
+et du catalogue (M3/M4), pas un câblage. Je m'arrête ici plutôt que
+d'inventer la forme du produit de nuit.
+
+Ma recommandation, si tu veux un pas intermédiaire sans rien inventer :
+faire porter au port de la boucle la **requête structurée** plutôt qu'un
+numéro d'itération, sans encore décider de son contenu — cela suffit à
+rendre la concaténation impossible le jour où un fournisseur arrive, et
+ça ne préjuge d'aucun choix produit.
+
 ## 29/07 — invariant 5 : « vérifié AVANT l'appel de modèle », non tenu
 
 Ce qui EST tenu et prouvé : le client ne consomme jamais à découvert, y

@@ -11,7 +11,7 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 ## État réel au 28/07/2026
 
-`cargo test --workspace` : **195 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
+`cargo test --workspace` : **196 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
 
 **Et l'on sait qu'ils ont tourné.** Sept tests exigent une base réelle et se sautent poliment sans elle — commodité en local, mais le plus beau trou du dispositif de preuve : la base ne leur est fournie que par *une ligne* de `ci.yml`, dont la disparition rendrait sept tests verts en ne prouvant plus rien. Depuis le 29/07, se sauter **en intégration continue est un échec**, et tout test qui se conditionne doit le faire par une variable que cette garde couvre — sans quoi un futur test se sauterait à jamais sous une variable que personne ne surveille. Un vert de complaisance est pire qu'un rouge : il s'affiche comme une preuve.
 
@@ -40,7 +40,8 @@ Le journal ne se contente pas d'être intact : **sa séquence est vérifiée sur
 ### Pas encore construit
 
 - Aucun binaire qui tourne en continu : pas de serveur HTTP servi, pas de connexion base branchée, pas d'appel de modèle, pas de client MCP.
-- `kollega-memory`, `kollega-model`, `kollega-tools` : squelettes (9 lignes chacun).
+- `kollega-memory`, `kollega-tools` : squelettes (9 lignes chacun).
+- `kollega-model` **existe mais n'est branché nulle part** (273 lignes, zéro dépendant — vérifié par une garde, pas affirmé) : le contrat `ModelProvider` réel, la clé d'API expurgée et les quatre modes d'échec sont écrits et testés, mais la boucle passe par son propre port, qui ne transporte qu'un numéro d'itération. Ses tests verts ne prouvent donc rien du produit. Deux conséquences qu'il serait malhonnête de taire : en aval de l'assemblage, l'invariant 7 n'a aujourd'hui **aucun chemin réel** à protéger ; et l'invariant 5 ne pourra devenir « vérifié *avant* » que le jour où la boucle recevra l'estimation de jetons que `ModelRequest` porte déjà. Le branchement engage la conception de la boucle d'agent (M3/M4) : il appartient au propriétaire, il est consigné dans [`docs/questions-nuit.md`](docs/questions-nuit.md).
 - Connecteurs OAuth, persistance de l'audit et des crédits, interface, facturation Stripe : jalons M2–M6, non commencés.
 
 ### Jalons ([détail](docs/jalons.md))
