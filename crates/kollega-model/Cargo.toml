@@ -2,6 +2,8 @@
 name = "kollega-model"
 version.workspace = true
 edition.workspace = true
-description = "Trait ModelProvider et implémentations"
+description = "Trait ModelProvider réel (faillible, facturé) et double de test"
 
 [dependencies]
+kollega-core = { path = "../kollega-core" }
+thiserror.workspace = true

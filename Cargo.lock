@@ -945,6 +945,10 @@ version = "0.1.0"
 [[package]]
 name = "kollega-model"
 version = "0.1.0"
+dependencies = [
+ "kollega-core",
+ "thiserror",
+]
 
 [[package]]
 name = "kollega-policy"
