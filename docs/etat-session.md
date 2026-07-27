@@ -94,6 +94,19 @@
 >     rouge. Le détail et la leçon sont en tête de
 >     `docs/matrice-invariants.md`.
 >
+> 14. **Deuxième vague : les gardes ANCIENNES aussi.** Bilan des deux
+>     passes — **sept des dix garde-fous du dépôt avaient au moins un
+>     trou, dix trous en tout**, tous corrigés, chaque contournement
+>     vérifié rouge. Le plus grave était ancien et touchait l'invariant 1 :
+>     `sql_context_guard` ne cherchait que `$1, false` en minuscules, si
+>     bien que `FALSE`, `'f'` et un troisième argument paramétré posaient
+>     le contexte d'organisation en portée SESSION — il survit alors au
+>     retour de la connexion dans le pool, et la requête suivante, celle
+>     d'un AUTRE client, se serait exécutée sous le contexte du précédent.
+>     Corrigé en fermant la question plutôt qu'en énumérant les fautes :
+>     seule la forme canonique littérale est admise.
+>     Ont tenu : `no_byte_order_mark` et `storage_boundary`.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
