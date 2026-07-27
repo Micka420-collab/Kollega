@@ -27,7 +27,9 @@
 //! la boucle. L'adaptateur [`RulesPolicy`] délègue au vrai moteur, mais sur
 //! une requête réduite au nom.
 
-use kollega_audit::chain::{EntryContent, Hash32, OrgChain, StoredEntry};
+use kollega_audit::chain::{ChainTip, EntryContent, Hash32, OrgChain, StoredEntry};
+use kollega_audit::content::{AuditContent, ContentDigest, ContentPayload};
+use kollega_audit::repository::{AuditChainRepository, AuditContentRepository};
 use kollega_audit::CanonicalValue;
 use kollega_core::{Cents, Decision, OrgId, TaskStatus};
 use kollega_policy::{decide, ToolCallRequest, ToolRule};
@@ -174,8 +176,169 @@ fn status_str(status: TaskStatus) -> Result<String, StoreError> {
     }
 }
 
-/// Ajoute une attestation à la chaîne de l'organisation et son contenu au
-/// dépôt de contenu, dans la transaction courante.
+/// Dépôt de CHAÎNE adossé à PostgreSQL, dans la transaction du pas.
+///
+/// Bloc 3f : le pilote ne parle plus à `audit_chain` en SQL libre, il passe
+/// par ce dépôt — dont le trait n'a que `append` et `read`. Une suppression
+/// dans la chaîne n'est donc pas seulement interdite par les GRANT, elle
+/// n'est pas EXPRIMABLE dans la surface que le pilote utilise.
+pub struct PgAuditChain<'t> {
+    tx: &'t mut Transaction<'static, Postgres>,
+    org_id: Uuid,
+}
+
+impl AuditChainRepository for PgAuditChain<'_> {
+    type Error = StoreError;
+
+    async fn append(
+        &mut self,
+        actor: &str,
+        action: &str,
+        content: &AuditContent,
+    ) -> Result<(), StoreError> {
+        let digest = content.digest();
+        // Queue de chaîne — la RLS restreint déjà à l'organisation courante.
+        let tail =
+            sqlx::query("SELECT height, entry_hash FROM audit_chain ORDER BY height DESC LIMIT 1")
+                .fetch_optional(&mut **self.tx)
+                .await?;
+        let tip = match tail {
+            None => None,
+            Some(row) => {
+                let prev_height: i64 = row.get(0);
+                let bytes: Vec<u8> = row.get(1);
+                let bytes: [u8; 32] = bytes.try_into().map_err(|_| {
+                    StoreError::CorruptState(
+                        "empreinte de chaîne d'une autre taille que 32 octets".into(),
+                    )
+                })?;
+                Some(ChainTip {
+                    height: u64::try_from(prev_height).map_err(|_| {
+                        StoreError::CorruptState("hauteur de chaîne négative".into())
+                    })?,
+                    hash: Hash32(bytes),
+                })
+            }
+        };
+
+        // L'entrée est PRODUITE par le domaine : son empreinte est calculée,
+        // elle ne peut pas mentir (bloc 3c). On persiste ce qu'il a produit.
+        let entry = OrgChain::new(OrgId::new(self.org_id)).append(
+            tip,
+            EntryContent {
+                actor: actor.to_owned(),
+                action: action.to_owned(),
+                payload: attestation_payload(&digest.to_hex()),
+                timestamp_micros: now_micros(),
+            },
+        );
+
+        let inserted = sqlx::query(
+            "INSERT INTO audit_chain \
+             (org_id, height, prev_hash, entry_hash, actor, action, content_digest, timestamp_micros) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(self.org_id)
+        .bind(i64::try_from(entry.height()).unwrap_or(i64::MAX))
+        .bind(entry.prev_hash().map(|h| h.0.to_vec()))
+        .bind(entry.hash().0.to_vec())
+        .bind(&entry.content().actor)
+        .bind(&entry.content().action)
+        .bind(digest.as_bytes().to_vec())
+        .bind(entry.content().timestamp_micros)
+        .execute(&mut **self.tx)
+        .await;
+        match inserted {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(db)) if db.code().as_deref() == Some("23505") => {
+                Err(StoreError::ChainConflict)
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn read(&mut self) -> Result<Vec<StoredEntry>, StoreError> {
+        let rows = sqlx::query(
+            "SELECT height, prev_hash, entry_hash, actor, action, content_digest, timestamp_micros \
+             FROM audit_chain ORDER BY height",
+        )
+        .fetch_all(&mut **self.tx)
+        .await?;
+        let to32 = |v: Vec<u8>| -> Result<[u8; 32], StoreError> {
+            v.try_into().map_err(|_| {
+                StoreError::CorruptState("empreinte d'une autre taille que 32 octets".into())
+            })
+        };
+        let mut entries = Vec::with_capacity(rows.len());
+        for row in rows {
+            let height: i64 = row.get(0);
+            let prev: Option<Vec<u8>> = row.get(1);
+            let hash: Vec<u8> = row.get(2);
+            let digest: Option<Vec<u8>> = row.get(5);
+            let digest_hex = match digest {
+                Some(d) => hex::encode(to32(d)?),
+                None => String::new(),
+            };
+            // StoredEntry : ce qui sort du stockage est une PRÉTENTION, pas
+            // une preuve — c'est `verify` qui tranche.
+            entries.push(StoredEntry {
+                content: EntryContent {
+                    actor: row.get(3),
+                    action: row.get(4),
+                    payload: attestation_payload(&digest_hex),
+                    timestamp_micros: row.get(6),
+                },
+                height: u64::try_from(height)
+                    .map_err(|_| StoreError::CorruptState("hauteur négative".into()))?,
+                prev_hash: prev.map(to32).transpose()?.map(Hash32),
+                hash: Hash32(to32(hash)?),
+            });
+        }
+        Ok(entries)
+    }
+}
+
+/// Dépôt de CONTENU adossé à PostgreSQL — purgeable, lui (invariant 12).
+pub struct PgAuditContent<'t> {
+    tx: &'t mut Transaction<'static, Postgres>,
+    org_id: Uuid,
+}
+
+impl AuditContentRepository for PgAuditContent<'_> {
+    type Error = StoreError;
+
+    async fn put(&mut self, content: &AuditContent) -> Result<(), StoreError> {
+        // Adressé par (org_id, digest) : même contenu = même ligne.
+        sqlx::query(
+            "INSERT INTO audit_content (org_id, digest, content) VALUES ($1, $2, $3) \
+             ON CONFLICT (org_id, digest) DO NOTHING",
+        )
+        .bind(self.org_id)
+        .bind(content.digest().as_bytes().to_vec())
+        .bind(content.payload().as_str())
+        .execute(&mut **self.tx)
+        .await?;
+        Ok(())
+    }
+
+    async fn read(&mut self, digest: ContentDigest) -> Result<Option<ContentPayload>, StoreError> {
+        let row = sqlx::query("SELECT content FROM audit_content WHERE digest = $1")
+            .bind(digest.as_bytes().to_vec())
+            .fetch_optional(&mut **self.tx)
+            .await?;
+        Ok(row.map(|r| ContentPayload::new(r.get(0))))
+    }
+
+    async fn purge_org(&mut self) -> Result<u64, StoreError> {
+        Ok(sqlx::query("DELETE FROM audit_content")
+            .execute(&mut **self.tx)
+            .await?
+            .rows_affected())
+    }
+}
+
+/// Ajoute une attestation à la chaîne et son contenu au dépôt de contenu,
+/// dans la transaction courante — en passant par les DEUX dépôts.
 ///
 /// Une violation d'unicité sur `(org_id, height)` — un autre écrivain a pris
 /// la hauteur — ressort en [`StoreError::ChainConflict`] : l'appelant rejoue
@@ -187,74 +350,17 @@ async fn append_attestation(
     action: &str,
     content_json: &str,
 ) -> Result<(), StoreError> {
-    let digest: [u8; 32] = Sha256::digest(content_json.as_bytes()).into();
-    let digest_hex = hex::encode(digest);
-
-    // Queue de chaîne — la RLS restreint déjà à l'organisation du contexte.
-    let tail =
-        sqlx::query("SELECT height, entry_hash FROM audit_chain ORDER BY height DESC LIMIT 1")
-            .fetch_optional(&mut **tx)
-            .await?;
-    let (height, prev_hash): (i64, Option<Hash32>) = match tail {
-        None => (0, None),
-        Some(row) => {
-            let prev_height: i64 = row.get(0);
-            let bytes: Vec<u8> = row.get(1);
-            let bytes: [u8; 32] = bytes.try_into().map_err(|_| {
-                StoreError::CorruptState(
-                    "empreinte de chaîne d'une autre taille que 32 octets".into(),
-                )
-            })?;
-            (prev_height + 1, Some(Hash32(bytes)))
-        }
-    };
-
-    let content = EntryContent {
-        actor: actor.to_owned(),
-        action: action.to_owned(),
-        payload: attestation_payload(&digest_hex),
-        timestamp_micros: now_micros(),
-    };
-    let entry_hash = OrgChain::new(OrgId::new(org_id)).entry_hash(
-        u64::try_from(height).unwrap_or(0),
-        prev_hash.as_ref(),
-        &content,
+    let content = AuditContent::new(
+        OrgId::new(org_id),
+        ContentPayload::new(content_json.to_owned()),
     );
-
-    let inserted = sqlx::query(
-        "INSERT INTO audit_chain \
-         (org_id, height, prev_hash, entry_hash, actor, action, content_digest, timestamp_micros) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-    )
-    .bind(org_id)
-    .bind(height)
-    .bind(prev_hash.as_ref().map(|h| h.0.to_vec()))
-    .bind(entry_hash.0.to_vec())
-    .bind(&content.actor)
-    .bind(&content.action)
-    .bind(digest.to_vec())
-    .bind(content.timestamp_micros)
-    .execute(&mut **tx)
-    .await;
-    match inserted {
-        Ok(_) => {}
-        Err(sqlx::Error::Database(db)) if db.code().as_deref() == Some("23505") => {
-            return Err(StoreError::ChainConflict);
-        }
-        Err(e) => return Err(e.into()),
-    }
-
-    // Contenu adressé par (org_id, digest) : même contenu = même ligne.
-    sqlx::query(
-        "INSERT INTO audit_content (org_id, digest, content) VALUES ($1, $2, $3) \
-         ON CONFLICT (org_id, digest) DO NOTHING",
-    )
-    .bind(org_id)
-    .bind(digest.to_vec())
-    .bind(content_json)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
+    // Le contenu d'abord : une attestation dont le contenu manquerait serait
+    // une empreinte sans original. Les emprunts sont séquentiels, jamais
+    // chevauchants — un seul dépôt tient la transaction à la fois.
+    PgAuditContent { tx, org_id }.put(&content).await?;
+    PgAuditChain { tx, org_id }
+        .append(actor, action, &content)
+        .await
 }
 
 /// Crée une tâche persistée : enveloppe scellée, statut `pending`.
@@ -433,15 +539,15 @@ async fn try_task_step(
     // pas. Soit l'effet et sa mémoire sont validés ensemble, soit le pas
     // entier est annulé et l'effet sera reconnu comme non enregistré.
     for (iteration, tool, result) in idempotent.performed.into_inner() {
-        let digest: [u8; 32] = Sha256::digest(result.as_bytes()).into();
-        sqlx::query(
-            "INSERT INTO audit_content (org_id, digest, content) VALUES ($1, $2, $3) \
-             ON CONFLICT (org_id, digest) DO NOTHING",
-        )
-        .bind(org_id)
-        .bind(digest.to_vec())
-        .bind(&result)
-        .execute(&mut *tx)
+        // Le résultat passe par le dépôt de contenu, et son empreinte est
+        // CALCULÉE par le type du domaine — plus de hachage à la main ici.
+        let content = AuditContent::new(OrgId::new(org_id), ContentPayload::new(result));
+        let digest = content.digest();
+        PgAuditContent {
+            tx: &mut tx,
+            org_id,
+        }
+        .put(&content)
         .await?;
         let recorded = sqlx::query(
             "INSERT INTO tool_call_effects \
@@ -453,7 +559,7 @@ async fn try_task_step(
         .bind(task_id)
         .bind(i64::from(iteration))
         .bind(&tool)
-        .bind(digest.to_vec())
+        .bind(digest.as_bytes().to_vec())
         .execute(&mut *tx)
         .await;
         match recorded {
@@ -516,43 +622,12 @@ pub struct ChainCheck {
 /// octets diffèrent, la vérification casse — c'est le but.
 pub async fn verify_org_chain(db: &Db, org_id: Uuid) -> Result<ChainCheck, StoreError> {
     let mut tx = db.org_transaction(org_id).await?;
-    let rows = sqlx::query(
-        "SELECT height, prev_hash, entry_hash, actor, action, content_digest, timestamp_micros \
-         FROM audit_chain ORDER BY height",
-    )
-    .fetch_all(&mut *tx)
-    .await?;
-    let mut entries = Vec::with_capacity(rows.len());
-    for row in rows {
-        let height: i64 = row.get(0);
-        let prev: Option<Vec<u8>> = row.get(1);
-        let hash: Vec<u8> = row.get(2);
-        let digest: Option<Vec<u8>> = row.get(5);
-        let to32 = |v: Vec<u8>| -> Result<[u8; 32], StoreError> {
-            v.try_into().map_err(|_| {
-                StoreError::CorruptState("empreinte d'une autre taille que 32 octets".into())
-            })
-        };
-        let digest_hex = match digest {
-            Some(d) => hex::encode(to32(d)?),
-            None => String::new(),
-        };
-        // StoredEntry, pas ChainedEntry : ce qu'on relit du stockage peut
-        // MENTIR — c'est précisément ce que la vérification est là pour
-        // dénoncer. Le type produit par le domaine, lui, ne peut pas.
-        entries.push(StoredEntry {
-            content: EntryContent {
-                actor: row.get(3),
-                action: row.get(4),
-                payload: attestation_payload(&digest_hex),
-                timestamp_micros: row.get(6),
-            },
-            height: u64::try_from(height)
-                .map_err(|_| StoreError::CorruptState("hauteur négative".into()))?,
-            prev_hash: prev.map(to32).transpose()?.map(Hash32),
-            hash: Hash32(to32(hash)?),
-        });
+    let entries = PgAuditChain {
+        tx: &mut tx,
+        org_id,
     }
+    .read()
+    .await?;
     OrgChain::new(OrgId::new(org_id))
         .verify(&entries)
         .map_err(|brk| StoreError::ChainBroken(format!("{brk:?}")))?;
@@ -568,10 +643,14 @@ pub async fn verify_org_chain(db: &Db, org_id: Uuid) -> Result<ChainCheck, Store
 /// chaîne, portant le nombre de lignes purgées.
 pub async fn purge_org_content(db: &Db, org_id: Uuid) -> Result<u64, StoreError> {
     let mut tx = db.org_transaction(org_id).await?;
-    let purged = sqlx::query("DELETE FROM audit_content")
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
+    // `purge_org` est le SEUL retrait exprimable, et il porte son nom : il
+    // vit sur le dépôt de CONTENU, jamais sur celui de la chaîne.
+    let purged = PgAuditContent {
+        tx: &mut tx,
+        org_id,
+    }
+    .purge_org()
+    .await?;
     let content_json = format!("{{\"purged_rows\":{purged}}}");
     append_attestation(&mut tx, org_id, "system", "content_purged", &content_json).await?;
     tx.commit().await?;
