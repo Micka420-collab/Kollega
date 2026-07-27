@@ -6,6 +6,8 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 > **Statut : pré-produit, en construction. Un développeur, à temps partiel.**
 > Ce README suit l'avancement **réel** du code. Ce qu'aucun test exécuté ne prouve est marqué comme tel — voir la [matrice invariant → test](docs/matrice-invariants.md), tenue sans complaisance.
+>
+> Lecture d'ensemble de la dernière campagne de vérification — ce qui a été falsifié, ce qui a été trouvé faux, ce qui reste : [rapport du 29/07](docs/rapport-2026-07-29-jour.md).
 
 ---
 
