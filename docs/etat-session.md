@@ -107,6 +107,27 @@
 >     seule la forme canonique littérale est admise.
 >     Ont tenu : `no_byte_order_mark` et `storage_boundary`.
 >
+> 15. **Documentation confrontée au code, puis migrations relues.** Trois
+>     écarts. (a) `credits-concurrence.md` faisait d'une colonne
+>     « tasks.cost_cents » la pièce centrale de deux exigences — elle n'a
+>     **jamais existé** ; le consommé vit dans l'enveloppe `tasks.state`.
+>     Document relu en entier : trois exigences sur quatre TENUES, la file
+>     d'attente par `SKIP LOCKED` **non commencée** (le motif n'apparaît
+>     nulle part). (b) ADR-0006 énonce un plafond de 256 Mio à son point 3
+>     alors que son amendement l'abaisse à 64 Mio, seul appliqué — un
+>     lecteur du point 3 aurait pu « réparer » le code à l'envers. (c) Le
+>     « corpus de 34 cas », répété en trois endroits, était exact mais que
+>     rien ne tenait : le nombre est désormais asserté dans le test.
+> 16. **Aucun test n'essayait jamais de VIOLER une contrainte du schéma.**
+>     Les tests prouvaient que l'application ne produit pas d'état
+>     interdit, jamais que la base le refuserait. Or `CHECK (balance_cents
+>     >= 0)` est la dernière ligne de défense de l'invariant 5 : le
+>     retirer aurait laissé le test de concurrence vert, puisqu'il éprouve
+>     le verrou et non la contrainte. Éprouvées désormais, à l'insertion
+>     comme à la mise à jour, en vérifiant le CODE d'erreur PostgreSQL —
+>     et l'unicité d'email dans ses DEUX moitiés, doublon refusé dans une
+>     organisation, même email accepté dans une autre.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
