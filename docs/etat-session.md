@@ -27,6 +27,27 @@
 >    qu'une migration en ait une — et une migration de DONNÉES serait
 >    passée sans laisser de trace dans un `pg_dump --schema-only`.
 >
+> 5. **La signature de l'image est enfin vérifiée** (run n°58, verte du
+>    premier coup). Depuis le début, la CI signait et attestait sans jamais
+>    valider : tout ce qu'on prouvait, c'est que `cosign sign` rend 0. Une
+>    signature qu'on n'a jamais su valider n'est pas une garantie, c'est
+>    une dépense. L'identité est épinglée — accepter n'importe quel
+>    signataire reviendrait à vérifier qu'une signature existe sans
+>    vérifier de qui elle vient.
+> 6. **Le serveur HTTP démarre pour de vrai, et on l'écoute.** `kollega
+>    serve` est la commande par défaut de l'image publiée et signée, et
+>    aucun test ne l'avait jamais démarrée : `kollega-api` ne contenait
+>    qu'un `crate_compiles()`, un placebo qui comptait comme un vert.
+>    Toute la chaîne de livraison portait donc sur un binaire dont
+>    personne n'avait vérifié que sa commande par défaut savait se lever.
+>
+> **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
+> qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
+> 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
+> connexion base branchée » (les deux existent). La règle est l'avancement
+> réel ; un README qui sous-estime ici pendant qu'il survend ailleurs n'est
+> pas modeste, il est simplement peu fiable.
+>
 > **La trouvaille de fond, à toi :** `kollega-model` — 273 lignes, contrat
 > `ModelProvider` réel, `ApiKey` expurgée, quatre modes d'échec — n'est
 > utilisé par **aucune crate**. La boucle appelle un port homonyme qui ne

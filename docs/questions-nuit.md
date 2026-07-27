@@ -1,5 +1,21 @@
 # Questions des sessions autonomes
 
+## 29/07 — choix réversibles pris seul (reprise de boucle)
+
+1. **`sqlx` et `tokio` aux dev-dependencies de `kollega-api`.** Nécessaires
+   au premier test qui démarre réellement le serveur (vraie socket,
+   `axum::serve`). Périphérie, hors invariant 11, réversible — même statut
+   que `serde_json` chez `kollega-audit`.
+2. **Suppression de `fn crate_compiles() {}` dans `kollega-api`.** Il ne
+   prouvait rien de plus que le compilateur tout en comptant comme un
+   test vert. Remplacé par un test qui écoute vraiment.
+3. **Étape CI de vérification cosign.** Elle *vérifie* ce que la CI
+   signait déjà sans jamais le valider ; l'identité est épinglée sur ce
+   workflow et cette référence. Verte à la run n°58 du premier coup. Si
+   tu ouvres un jour la publication à d'autres branches ou à des tags,
+   cette identité devra suivre — c'est le seul point d'entretien qu'elle
+   introduit.
+
 ## 29/07 — `kollega-model` est écrit et branché nulle part (constat, puis question)
 
 **Le constat, vérifié et non discutable** : aucune crate ne dépend de
