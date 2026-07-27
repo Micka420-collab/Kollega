@@ -19,10 +19,10 @@ deux gardes sont vérifiées par sabotage, témoin positif compris.
 
 ## Ce que « vérifié par sabotage » ne garantit pas
 
-**Quatre des cinq gardes écrites dans la nuit du 29/07 avaient un trou, et
-les cinq avaient été « vérifiées par sabotage ».** Il n'y a pas de
-contradiction : j'avais saboté chacune sous la forme exacte qu'elle était
-écrite pour reconnaître. La vérification était circulaire — elle
+**Sept des dix garde-fous du dépôt avaient au moins un trou — dix trous en
+tout — et tous avaient été « vérifiés par sabotage ».** Il n'y a pas de
+contradiction : j'avais saboté chacun sous la forme exacte qu'il était
+écrit pour reconnaître. La vérification était circulaire — elle
 confirmait que le code faisait ce que j'avais en tête, jamais qu'il
 couvrait ce à quoi je n'avais pas pensé.
 
@@ -36,6 +36,17 @@ plutôt qu'à confirmer :
 | `migrations_shape` | plancher de justification comptant tout le fichier | dix lignes de SQL valaient justification d'irréversibilité |
 | `migrations_shape` | `.sql` inclassable ignoré sans un mot | `0008_x.sql`, forme que sqlx sait appliquer, échappait à l'exigence de descente |
 | `orphan_crates` | une arête de manifeste comptait pour un usage | déclarer une dépendance sans écrire une ligne de code faisait passer une crate pour branchée |
+| **`sql_context_guard`** | ne cherchait que `$1, false` en minuscules | **`FALSE`, `'f'` et un troisième argument `$2` — trois façons de poser le contexte d'organisation en portée SESSION**, donc de servir à un client les données d'un autre |
+| `repository_shape` | motifs SQL en phrases exactes, espace unique | requête coupée sur deux lignes, `public.audit_chain`, identifiant entre guillemets, nom de table injecté par `format!` |
+| `repository_shape` | liste NOIRE de noms de méthodes | `expunge` entrait dans le dépôt de chaîne sans effort |
+| `claims_are_backed` | filtre exigeant plus de six caractères ET un souligné | « tests `anchor` », **déjà cité dans cette matrice**, n'était pas vérifié |
+| `claims_are_backed` | ne connaissait pas les jobs de CI | renommer `reversibilite` laissait la matrice affirmer la preuve entière de l'invariant 13, devenue introuvable |
+
+Deux gardes ont tenu : `no_byte_order_mark` et `storage_boundary` — pour
+cette dernière, la barre oblique de son préfixe empêche bien qu'une crate
+nommée `kollega-store-extra` passe pour la persistance. `dependency_graph`
+n'avait pas de trou mais une imprécision non écrite : sa fermeture
+sur-approxime, faute d'unification des features.
 
 Deux conséquences, à ne pas perdre :
 
