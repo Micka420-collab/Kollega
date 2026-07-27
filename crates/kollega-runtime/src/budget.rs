@@ -214,6 +214,37 @@ mod tests {
         assert_eq!(b.charge(Cents(-1)), Err(BudgetError::NegativeCost));
     }
 
+    /// `NegativeState` n'était produite par AUCUN test — trouvé le 29/07 en
+    /// recensant les variantes d'erreur jamais atteintes.
+    ///
+    /// C'est la défense de dernier recours du budget : elle ne devrait
+    /// jamais se déclencher, puisque le schéma interdit déjà un solde
+    /// négatif (`CHECK balance_cents >= 0`). Mais « ne devrait jamais » est
+    /// exactement ce qui cesse d'être vrai en silence — un solde lu d'une
+    /// base restaurée à la main, une future colonne signée mal contrainte.
+    /// Une défense qu'on n'a jamais vue se déclencher n'est pas une
+    /// défense, c'est une intention.
+    #[test]
+    fn a_negative_state_is_refused_at_construction_and_at_refresh() {
+        assert_eq!(
+            Budget::new(Cents(100), Cents(-1)),
+            Err(BudgetError::NegativeState),
+            "un solde d'organisation négatif ne peut pas fonder un budget"
+        );
+        assert_eq!(
+            Budget::new(Cents(-1), Cents(100)),
+            Err(BudgetError::NegativeState),
+            "un plafond négatif non plus"
+        );
+        let b = Budget::new(Cents(100), Cents(100)).expect("budget valide");
+        assert_eq!(
+            b.refreshed(Cents(-1)),
+            Err(BudgetError::NegativeState),
+            "et le RECHARGEMENT doit refuser tout autant : c'est le chemin \
+             que prend chaque pas de tâche, donc celui qui compte"
+        );
+    }
+
     #[test]
     fn huge_cost_does_not_overflow_past_the_ceiling() {
         let mut b = Budget::new(Cents(i64::MAX), Cents(i64::MAX)).unwrap();
