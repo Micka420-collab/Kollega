@@ -121,19 +121,33 @@ fn dependency_names(manifest: &toml::Value, section: &str) -> BTreeSet<String> {
 /// `uuid` v4, l'unification des features de cargo le propageant à tout le
 /// graphe. Le domaine, lui, ne déclare pas v4 et n'appelle jamais
 /// `new_v4` (garde textuelle ci-dessous).
+/// **Liste NOIRE, et c'est un choix contraint.** Une liste blanche serait
+/// plus forte — elle attraperait ce à quoi personne n'a pensé — mais elle
+/// n'est pas praticable ici, et il vaut mieux l'écrire que le laisser
+/// deviner : voir la sur-approximation décrite sous
+/// [`core_transitive_closure_contains_no_io_crate`].
 const IO_CRATES: &[&str] = &[
     "tokio",
+    "tokio-util",
     "sqlx",
     "sqlx-core",
     "sqlx-postgres",
     "reqwest",
     "hyper",
+    "hyper-util",
+    "h2",
     "mio",
     "socket2",
     "async-std",
+    "async-io",
+    "polling",
     "smol",
+    "ureq",
+    "isahc",
+    "surf",
     "rusqlite",
     "native-tls",
+    "rustls",
     "openssl",
     "curl",
 ];
@@ -150,6 +164,27 @@ const IO_CRATES: &[&str] = &[
 /// Les dev-dependencies sont hors sujet ici : elles n'entrent pas dans
 /// l'artefact livré (`proptest` est pur, mais ses propres dépendances ne
 /// regardent pas le domaine).
+///
+/// **Ce que cette fermeture SUR-APPROXIME, et pourquoi c'est écrit ici.**
+/// `Cargo.lock` liste, pour chaque paquet, les dépendances résolues APRÈS
+/// unification des features de tout le workspace. La fermeture calculée
+/// contient donc des crates que le domaine n'atteint pas réellement —
+/// `js-sys`, `wasm-bindgen` et `futures-io` y figurent parce que la
+/// périphérie active des features sur des dépendances partagées. Deux
+/// conséquences à ne pas confondre :
+///
+/// - le sens de l'erreur est SÛR : rien ne peut être compilé sans figurer
+///   dans le verrou, donc aucune crate d'entrée-sortie réellement
+///   atteignable ne peut échapper à ce balayage ;
+/// - en revanche, un message nommant une crate ne prouve pas que le
+///   domaine s'en sert — il faut vérifier le chemin avant de conclure.
+///
+/// C'est aussi la raison pour laquelle la liste ci-dessous reste NOIRE.
+/// Une liste blanche des trente crates de la fermeture serait plus stricte
+/// mais rougirait à chaque fois qu'une crate de la périphérie active une
+/// feature sans rapport avec le domaine — une garde qui crie à tort finit
+/// désactivée, et l'on aurait échangé une vraie protection contre une
+/// fausse.
 #[test]
 fn core_transitive_closure_contains_no_io_crate() {
     let root = crates_dir().parent().expect("racine").to_path_buf();
