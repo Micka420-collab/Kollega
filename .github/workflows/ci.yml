@@ -27,6 +27,11 @@ on:
 jobs:
   verifications:
     runs-on: ubuntu-latest
+    permissions:
+      # Publication du diagnostic d'échec sur une branche lisible en
+      # anonyme : les journaux de job exigent un jeton pour être LUS, ce
+      # qui rend un rouge indéchiffrable depuis un poste sans secret.
+      contents: write
     services:
       postgres:
         # pgvector inclus : la migration 0001 crée l'extension.
@@ -56,7 +61,24 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests (graphe de dépendances + isolation RLS sur base réelle)
-        run: cargo test --workspace --locked
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked 2>&1 | tee test-out.txt
+      - name: Publier le diagnostic des tests (branche lisible en anonyme)
+        if: failure()
+        run: |
+          mkdir -p diag
+          # Les échecs et leurs assertions, isolés du bruit des tests verts.
+          grep -E "^(test .*FAILED|failures:|---- .* ----|thread )" -A 12 test-out.txt \
+            > diag/echecs.txt 2>/dev/null || true
+          tail -c 60000 test-out.txt > diag/queue.txt
+          cd diag
+          git init -q -b ci-diagnostic-tests
+          git config user.email "ci@kollega.invalid"
+          git config user.name "CI diagnostic"
+          git add -A
+          git commit -qm "diagnostic tests run ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-diagnostic-tests
       - name: Différentiel encodage canonique Rust <-> Python
         # Deux implémentations écrites indépendamment depuis la spec ; toute
         # divergence est un défaut de SPÉCIFICATION à documenter, pas un bug
