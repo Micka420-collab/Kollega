@@ -207,6 +207,20 @@ async fn the_schema_itself_refuses_an_overdraft_and_a_duplicate_email() {
     // même itération — ils ne peuvent donc pas atteindre cette contrainte.
     // Elle aurait pu disparaître d'une migration sans qu'aucun rouge n'en
     // parle, et l'idempotence n'aurait plus reposé que sur la dérivation.
+    // Un crédit VALIDÉ : les sections précédentes font délibérément avorter
+    // leurs transactions pour éprouver les contraintes, si bien qu'aucune
+    // ligne de crédit ne subsiste. `create_task` lit ce solde et échouerait
+    // en `RowNotFound` — c'est exactement ce qu'a signalé la CI n°91, et le
+    // message ne pointait pas la cause : ce commentaire existe pour qu'on
+    // n'ait pas à la retrouver deux fois.
+    let mut tx = db.org_transaction(org_a).await.expect("tx");
+    sqlx::query("INSERT INTO credits (org_id, balance_cents) VALUES ($1, 100000)")
+        .bind(org_a)
+        .execute(&mut *tx)
+        .await
+        .expect("crédit validé");
+    tx.commit().await.expect("commit crédit");
+
     let task = Uuid::from_u128(0x0005_C11C);
     kollega_store::driver::create_task(&db, org_a, task, kollega_core::Cents(10_000), 4)
         .await
