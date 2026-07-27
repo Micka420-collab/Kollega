@@ -53,6 +53,16 @@ Sept trouvailles, dont **aucune n'était visible depuis un test pur** :
 7. **Le `GRANT DELETE` de la migration 0002** subsistait sur
    `organizations` et `users`, en contradiction avec la constitution.
 
+8. **Le schéma et le validateur se partagent le travail** — mis en évidence
+   par un test qui a échoué (CI n°48) en tentant d'injecter une double
+   intention : elle est **impossible**. L'unicité de la migration 0005
+   porte sur `(org, tool_call_id, action)`, donc elle interdit la
+   répétition de TOUTE action pour un appel, pas seulement la double
+   clôture. Le validateur, lui, rattrape ce que le schéma ne peut pas
+   voir : les séquences incohérentes d'actions DIFFÉRENTES (clôture sans
+   intention, seconde clôture sous une autre forme). Je ne l'avais pas
+   formulé ; le test le dit maintenant.
+
 Plus deux conventions attrapées par l'outillage : `items after a test
 module` (clippy) et le module de tests devant clore le fichier.
 

@@ -2,11 +2,21 @@
 //!
 //! `vertical_slice` prouve qu'il approuve une chaîne saine ; c'est
 //! nécessaire, mais insuffisant : un validateur qui dirait toujours oui
-//! passerait ce test-là. Ici, on injecte en base les violations que la
-//! table du bloc 3e déclare interdites, et l'on vérifie qu'il les nomme.
+//! passerait ce test-là. Ici, on injecte en base les formes interdites et
+//! l'on vérifie qu'il les NOMME.
 //!
-//! Le rôle applicatif PEUT insérer dans `audit_chain` (ajout seul) : c'est
-//! donc un scénario atteignable, pas une manipulation de laboratoire — un
+//! DEUX MÉCANISMES SE PARTAGENT LE TRAVAIL — c'est ce test qui l'a mis en
+//! évidence, en échouant (CI n°48) :
+//!
+//! - le SCHÉMA (migration 0005, unicité sur `(org, tool_call_id, action)`)
+//!   rend impossible la RÉPÉTITION D'UNE MÊME ACTION pour un appel : deux
+//!   intentions, deux complétions… n'existent tout simplement pas ;
+//! - le VALIDATEUR rattrape les séquences incohérentes d'actions
+//!   DIFFÉRENTES, que le schéma ne peut pas voir : une clôture sans
+//!   intention, une seconde clôture sous une autre forme.
+//!
+//! Le rôle applicatif PEUT insérer dans `audit_chain` (ajout seul) : ces
+//! scénarios sont atteignables, pas des manipulations de laboratoire — un
 //! bug d'écriture produirait exactement cela.
 //!
 //! Exige `TEST_MIGRATE_DATABASE_URL` (fournie en CI) ; sauté sinon.
@@ -126,29 +136,31 @@ async fn the_sequence_validator_names_every_forbidden_shape() {
         "et la violation doit être NOMMÉE, pas seulement comptée"
     );
 
-    // --- 2. Double intention ------------------------------------------------
+    // --- 2. La double intention est IMPOSSIBLE, pas seulement détectée ------
+    // Le schéma la refuse : inutile de demander au validateur de rattraper
+    // ce qui ne peut pas exister. C'est la migration 0005 qui parle ici.
     let twice = Uuid::from_u128(0xB2);
     insert_raw(&db, org, "tool_call_intended", twice)
         .await
-        .expect("insertion");
-    insert_raw(&db, org, "tool_call_intended", twice)
-        .await
-        .expect("insertion");
-    let report = driver::verify_org_sequence(&db, org)
-        .await
-        .expect("lecture");
-    assert!(
-        report
-            .violations
-            .iter()
-            .any(|v| v.kind == ViolationKind::DuplicateIntent),
-        "une seconde intention pour le même appel est une violation : {:?}",
-        report.violations
-    );
+        .expect("première intention : légitime");
+    let refused = insert_raw(&db, org, "tool_call_intended", twice).await;
+    match refused {
+        Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23505") => {
+            assert_eq!(
+                e.constraint(),
+                Some("audit_chain_one_attestation_per_call_action"),
+                "c'est bien l'unicité d'attestation qui refuse, pas la hauteur"
+            );
+        }
+        other => panic!("une seconde intention aurait dû être refusée : {other:?}"),
+    }
 
     // --- 3. Un appel OUVERT n'est pas une violation -------------------------
     // L'asymétrie du bloc 3e, sur données réelles : l'appel `twice` reste
     // ouvert, et il est rapporté comme tel — information, pas faute.
+    let report = driver::verify_org_sequence(&db, org)
+        .await
+        .expect("lecture");
     assert!(
         report
             .open_calls
@@ -157,7 +169,9 @@ async fn the_sequence_validator_names_every_forbidden_shape() {
         report.open_calls
     );
 
-    // --- 4. Un enregistrement APRÈS clôture ---------------------------------
+    // --- 4. Seconde clôture sous une AUTRE forme ----------------------------
+    // Celle-ci, le schéma ne peut pas la voir : les actions diffèrent, donc
+    // l'unicité passe. C'est exactement le trou que le validateur comble.
     let closed = Uuid::from_u128(0xC3);
     insert_raw(&db, org, "tool_call_intended", closed)
         .await
@@ -167,7 +181,7 @@ async fn the_sequence_validator_names_every_forbidden_shape() {
         .expect("insertion");
     insert_raw(&db, org, "tool_call_denied", closed)
         .await
-        .expect("insertion");
+        .expect("le schéma laisse passer : action différente");
     let report = driver::verify_org_sequence(&db, org)
         .await
         .expect("lecture");
