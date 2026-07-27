@@ -179,9 +179,8 @@ async fn tenant_isolation_holds_and_the_test_is_sensitive() {
     // la RLS. La cause attendue est nommée : le réglage d'organisation
     // n'existe pas dans cette session, et `current_setting` sans `missing_ok`
     // le refuse (ADR-0002, point 3 : fermé par défaut, jamais silencieux).
-    let erreur = out_of_context.expect_err(
-        "sans app.current_org, la requête doit échouer, pas retourner des lignes",
-    );
+    let erreur = out_of_context
+        .expect_err("sans app.current_org, la requête doit échouer, pas retourner des lignes");
     let base = erreur
         .as_database_error()
         .expect("l'échec doit venir de la BASE, pas du transport");
