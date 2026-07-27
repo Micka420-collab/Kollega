@@ -21,22 +21,20 @@
 //!   microsecondes Unix, stocké en BIGINT : l'aller-retour ne peut pas
 //!   tronquer ce qui a été haché.
 //!
-//! LIMITE CONNUE, consignée : le trait `PolicyEngine` de la machine ne
-//! transporte que le NOM de l'outil — les bornes riches de `kollega-policy`
-//! (montant, destinataires, chemins) ne sont pas encore atteignables depuis
-//! la boucle. L'adaptateur [`RulesPolicy`] délègue au vrai moteur, mais sur
-//! une requête réduite au nom.
+//! LIMITE LEVÉE le 29/07 : la machine appelait naguère un trait local qui
+//! ne transportait que le NOM de l'outil, rendant les bornes de
+//! `kollega-policy` inertes. Elle appelle désormais le vrai moteur avec la
+//! requête complète — montant, destinataires, chemins compris.
 
 use kollega_audit::chain::{ChainTip, EntryContent, Hash32, OrgChain, StoredEntry};
 use kollega_audit::content::{AuditContent, ContentDigest, ContentPayload};
 use kollega_audit::records::{verify_sequence, AbandonReason, AuditRecord, SequenceReport};
 use kollega_audit::repository::{AuditChainRepository, AuditContentRepository};
 use kollega_audit::CanonicalValue;
-use kollega_core::{Cents, Decision, OrgId, TaskStatus, ToolCallId};
-use kollega_policy::{decide, ToolCallRequest, ToolRule};
+use kollega_core::{Cents, OrgId, TaskStatus, ToolCallId};
+use kollega_policy::ToolRule;
 use kollega_runtime::machine::{
-    drive, ApprovalDecision, AuditEvent, ModelProvider, PolicyEngine, TaskState, TaskStateEnvelope,
-    ToolRunner,
+    drive, ApprovalDecision, AuditEvent, ModelProvider, TaskState, TaskStateEnvelope, ToolRunner,
 };
 use sha2::{Digest as _, Sha256};
 use sqlx::{Postgres, Row as _, Transaction};
@@ -109,23 +107,10 @@ impl ToolRunner for IdempotentTools<'_> {
     }
 }
 
-/// Adaptateur : la machine délègue au moteur de politiques réel.
-struct RulesPolicy<'a> {
-    rules: &'a [ToolRule],
-}
-
-impl PolicyEngine for RulesPolicy<'_> {
-    fn decide(&self, tool: &str) -> Decision {
-        decide(
-            self.rules,
-            &ToolCallRequest {
-                tool_name: tool.to_owned(),
-                ..ToolCallRequest::default()
-            },
-        )
-        .decision
-    }
-}
+// L'adaptateur `RulesPolicy` a disparu : la machine appelle désormais le
+// moteur DIRECTEMENT, avec la requête complète. Il n'y a plus de couche
+// intermédiaire qui pouvait perdre en route le montant, les destinataires
+// ou les chemins — et donc plus de bornes inertes.
 
 /// Horodatage de l'horloge de la périphérie — la machine reste sans
 /// horloge. Toute construction passe par [`kollega_core::Timestamp`]
@@ -567,13 +552,12 @@ async fn try_task_step(
     // La machine — pure, sans horloge, sans base — et son exécuteur rendu
     // idempotent par la mémoire des effets.
     let audit_before = state.audit.len();
-    let policy = RulesPolicy { rules };
     let idempotent = IdempotentTools {
         inner: tools,
         known,
         performed: RefCell::new(Vec::new()),
     };
-    drive(&mut state, model, &policy, &idempotent, approval);
+    drive(&mut state, model, rules, &idempotent, approval);
 
     // Les effets NOUVEAUX : leur trace part dans la même transaction que le
     // pas. Soit l'effet et sa mémoire sont validés ensemble, soit le pas

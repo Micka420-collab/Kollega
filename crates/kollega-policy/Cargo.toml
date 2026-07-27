@@ -6,6 +6,9 @@ description = "Moteur de décision sur les appels d'outils — partie pure (inva
 
 [dependencies]
 kollega-core = { path = "../kollega-core" }
+# La requête d'appel voyage dans l'état de tâche persisté (la machine la
+# transporte jusqu'au moteur) : elle doit être sérialisable. Pur, sans E/S.
+serde = { workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]

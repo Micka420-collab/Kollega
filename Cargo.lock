@@ -956,6 +956,7 @@ version = "0.1.0"
 dependencies = [
  "kollega-core",
  "proptest",
+ "serde",
  "thiserror",
 ]
 
@@ -964,6 +965,7 @@ name = "kollega-runtime"
 version = "0.1.0"
 dependencies = [
  "kollega-core",
+ "kollega-policy",
  "proptest",
  "serde",
  "serde_json",

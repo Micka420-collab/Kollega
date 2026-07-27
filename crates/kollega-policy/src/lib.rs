@@ -41,7 +41,7 @@
 use kollega_core::{Cents, Decision};
 
 /// Description d'un appel d'outil soumis au moteur.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct ToolCallRequest {
     /// Nom de l'outil demandé (ex. `doc.write`, `mail.send`).
     pub tool_name: String,

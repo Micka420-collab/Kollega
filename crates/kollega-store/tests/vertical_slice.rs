@@ -9,7 +9,7 @@
 //! message explicite.
 
 use kollega_core::{Cents, TaskStatus};
-use kollega_policy::ToolRule;
+use kollega_policy::{Bound, ToolCallRequest, ToolRule};
 use kollega_runtime::machine::{ApprovalDecision, ModelProvider, PlannedAction, ToolRunner};
 use kollega_store::driver;
 use sqlx::{Connection, PgConnection, Row as _};
@@ -70,8 +70,11 @@ fn relance_rules() -> Vec<ToolRule> {
         tool_name: "mail.send".to_owned(),
         allowed: true,
         requires_approval: true,
-        amount: None,
-        recipients: None,
+        // Bornes RÉELLES, désormais atteignables depuis la boucle : au-delà
+        // de 10 destinataires le dirigeant tranche, au-delà de 100 c'est
+        // refusé quoi qu'il valide.
+        amount: Some(Bound::two_tier(Cents(50_000), Cents(500_000)).expect("bornes valides")),
+        recipients: Some(Bound::two_tier(10u32, 100).expect("bornes valides")),
         paths: None,
     }]
 }
@@ -80,7 +83,14 @@ fn relance_script() -> ScriptedModel {
     ScriptedModel {
         actions: vec![
             PlannedAction::UseTool {
-                tool: "mail.send".to_owned(),
+                // Une relance RÉELLE : un destinataire, un montant. La
+                // boucle transporte désormais tout cela jusqu'au moteur.
+                request: ToolCallRequest {
+                    tool_name: "mail.send".to_owned(),
+                    recipient_count: Some(1),
+                    amount: Some(Cents(12_500)),
+                    paths: Vec::new(),
+                },
                 model_cost: Cents(30),
                 tool_cost: Cents(20),
             },

@@ -11,8 +11,7 @@ pub mod machine;
 
 pub use budget::{Budget, BudgetError, SpendDecision};
 pub use machine::{
-    drive, ApprovalDecision, AuditEvent, ModelProvider, PlannedAction, PolicyEngine, TaskState,
-    ToolRunner,
+    drive, ApprovalDecision, AuditEvent, ModelProvider, PlannedAction, TaskState, ToolRunner,
 };
 
 #[cfg(test)]

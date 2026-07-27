@@ -6,6 +6,9 @@ description = "La boucle d'agent — noyau pur"
 
 [dependencies]
 kollega-core = { path = "../kollega-core" }
+# La machine appelle le VRAI moteur de politiques — il n'y a plus de trait
+# local à implémenter de travers (invariant 2 rendu structurel).
+kollega-policy = { path = "../kollega-policy" }
 serde = { workspace = true }
 # Pur, sans E/S : porte l'intermédiaire `Value` de l'enveloppe versionnée
 # (la version est vérifiée AVANT d'interpréter l'état, bloc 5).

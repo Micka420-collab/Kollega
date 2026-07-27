@@ -13,8 +13,10 @@
 //!
 //! Invariants portés ici (numérotation de CLAUDE.md — l'invariant 1 est la
 //! RLS, hors de cette crate) :
-//! - **2** : tout appel d'outil passe par [`PolicyEngine::decide`] — il n'y a
-//!   aucune branche d'exécution d'outil qui ne soit précédée d'une décision.
+//! - **2** : tout appel d'outil passe par `kollega_policy::decide`, appelé
+//!   ICI avec la requête COMPLÈTE — il n'y a aucune branche d'exécution
+//!   d'outil qui ne soit précédée d'une décision du vrai moteur, et plus
+//!   aucun trait intermédiaire à implémenter de travers.
 //! - **3** : tout appel d'outil produit `ToolCallIntended` AVANT et
 //!   `ToolCallCompleted` APRÈS ; une tâche interrompue garde donc la trace de
 //!   son intention (l'`Intended` sans `Completed`).
@@ -23,6 +25,7 @@
 //!   `AbortedCostCeiling` / `AbortedCredit`.
 
 use kollega_core::{Cents, Decision, TaskStatus};
+use kollega_policy::{decide, ToolCallRequest, ToolRule};
 use serde::{Deserialize, Serialize};
 
 use crate::budget::{Budget, SpendDecision};
@@ -32,8 +35,10 @@ use crate::budget::{Budget, SpendDecision};
 pub enum PlannedAction {
     /// Utiliser un outil, à un coût (modèle + outil).
     UseTool {
-        /// Nom de l'outil.
-        tool: String,
+        /// L'appel COMPLET soumis au moteur : nom, montant, destinataires,
+        /// chemins. Porter la requête entière — et non le seul nom — est
+        /// ce qui rend les bornes de `kollega-policy` effectives.
+        request: ToolCallRequest,
         /// Coût de l'appel au modèle qui a produit ce plan.
         model_cost: Cents,
         /// Coût de l'exécution de l'outil.
@@ -63,11 +68,16 @@ pub trait ModelProvider {
     fn plan(&self, iteration: u32) -> PlannedAction;
 }
 
-/// Décide de l'autorisation d'un appel d'outil (invariant 2 de CLAUDE.md).
-pub trait PolicyEngine {
-    /// Décision pour l'outil nommé.
-    fn decide(&self, tool: &str) -> Decision;
-}
+// PLUS DE TRAIT `PolicyEngine` (nuit du 28 au 29/07). Il ne transportait
+// que le NOM de l'outil : les bornes de `kollega-policy` — montant,
+// destinataires, chemins, et surtout la limite dure à deux étages — étaient
+// structurellement inatteignables depuis la boucle. Elles existaient,
+// testées, et n'auraient jamais rien arrêté en production.
+//
+// La machine appelle désormais `kollega_policy::decide` DIRECTEMENT, avec
+// la requête complète. L'invariant 2 devient structurel : il n'y a plus
+// d'intermédiaire à implémenter de travers, et aucune façon d'exécuter un
+// outil sans que le vrai moteur ait vu le vrai appel.
 
 /// Exécute un outil autorisé (trait, pour découpler des vrais outils).
 pub trait ToolRunner {
@@ -137,8 +147,8 @@ pub enum AuditEvent {
 /// Appel d'outil en attente de validation (état suspendu).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingApproval {
-    /// Outil en attente.
-    pub tool: String,
+    /// L'appel en attente, COMPLET : c'est lui qui repartira au moteur.
+    pub request: ToolCallRequest,
     /// Itération de l'appel suspendu — PERSISTÉE, pas déduite de l'ordre :
     /// après une reprise, c'est elle qui redonne l'identité de l'appel.
     pub iteration: u32,
@@ -189,13 +199,15 @@ impl TaskState {
 /// composants sérialisés : sans cela, une mise en production rendrait les
 /// tâches suspendues illisibles — ou pire, MAL lisibles.
 ///
-/// Historique : v1 (28/07, forme initiale) ; **v2 (nuit du 28 au 29/07 :
+/// Historique : v1 (28/07, forme initiale) ; v2 (nuit du 28 au 29/07 :
 /// `iteration` ajoutée aux événements d'appel d'outil et à
 /// [`PendingApproval`], pour rendre l'identité d'un appel dérivable —
-/// prérequis de l'idempotence).** Le mécanisme a servi dès son premier
-/// changement de forme réel : une tâche v1 suspendue est refusée
-/// proprement au lieu d'être mal désérialisée.
-pub const TASK_STATE_FORMAT_VERSION: u32 = 2;
+/// prérequis de l'idempotence) ; **v3 (même nuit : l'appel en attente
+/// porte la requête COMPLÈTE, plus le seul nom d'outil, afin que le vrai
+/// moteur de politiques voie montant, destinataires et chemins).** Le
+/// mécanisme sert à chaque changement de forme réel : une tâche d'une
+/// version antérieure est refusée proprement au lieu d'être mal relue.
+pub const TASK_STATE_FORMAT_VERSION: u32 = 3;
 
 /// Erreur d'ouverture d'une enveloppe d'état.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -309,7 +321,7 @@ fn charge_or_stop(state: &mut TaskState, cost: Cents) -> bool {
 pub fn drive(
     state: &mut TaskState,
     model: &dyn ModelProvider,
-    policy: &dyn PolicyEngine,
+    rules: &[ToolRule],
     tools: &dyn ToolRunner,
     approval: Option<ApprovalDecision>,
 ) {
@@ -342,7 +354,7 @@ pub fn drive(
         match decision {
             ApprovalDecision::Reject => {
                 state.audit.push(AuditEvent::ToolCallDenied {
-                    tool: pending.tool.clone(),
+                    tool: pending.request.tool_name.clone(),
                     iteration: pending.iteration,
                     reason: "refusé par validation humaine".to_owned(),
                 });
@@ -358,9 +370,9 @@ pub fn drive(
                 // L'itération vient du PENDING PERSISTÉ, pas du compteur
                 // courant : après une reprise, c'est ce qui redonne à
                 // l'appel la même identité qu'avant l'interruption.
-                tools.run(&pending.tool, pending.iteration);
+                tools.run(&pending.request.tool_name, pending.iteration);
                 state.audit.push(AuditEvent::ToolCallCompleted {
-                    tool: pending.tool,
+                    tool: pending.request.tool_name,
                     iteration: pending.iteration,
                     cost: total,
                 });
@@ -387,21 +399,23 @@ pub fn drive(
                 return;
             }
             PlannedAction::UseTool {
-                tool,
+                request,
                 model_cost,
                 tool_cost,
             } => {
                 let iteration = state.iteration;
+                let tool = request.tool_name.clone();
                 // Invariant 3 : intention AVANT toute exécution.
                 state.audit.push(AuditEvent::ToolCallIntended {
                     tool: tool.clone(),
                     iteration,
                 });
-                // Invariant 2 : passage obligatoire par la politique.
-                match policy.decide(&tool) {
+                // Invariant 2 : le VRAI moteur voit le VRAI appel — montant,
+                // destinataires et chemins compris. Plus d'intermédiaire.
+                match decide(rules, &request).decision {
                     Decision::Deny { reason } => {
                         state.audit.push(AuditEvent::ToolCallDenied {
-                            tool: tool.clone(),
+                            tool,
                             iteration,
                             reason,
                         });
@@ -409,12 +423,11 @@ pub fn drive(
                         return;
                     }
                     Decision::RequireApproval { .. } => {
-                        state.audit.push(AuditEvent::ApprovalRequested {
-                            tool: tool.clone(),
-                            iteration,
-                        });
+                        state
+                            .audit
+                            .push(AuditEvent::ApprovalRequested { tool, iteration });
                         state.pending = Some(PendingApproval {
-                            tool,
+                            request,
                             iteration,
                             model_cost,
                             tool_cost,
@@ -453,7 +466,6 @@ fn finish(state: &mut TaskState, status: TaskStatus) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
 
     /// Modèle déterministe : rejoue une liste d'actions par itération, puis
     /// conclut.
@@ -472,17 +484,9 @@ mod tests {
         }
     }
 
-    /// Politique déterministe par table.
-    struct MapPolicy {
-        decisions: BTreeMap<String, Decision>,
-    }
-    impl PolicyEngine for MapPolicy {
-        fn decide(&self, tool: &str) -> Decision {
-            self.decisions.get(tool).cloned().unwrap_or(Decision::Deny {
-                reason: "aucune politique".to_owned(),
-            })
-        }
-    }
+    // Plus de politique factice : ces tests exercent le VRAI moteur, avec
+    // de vraies règles. Un test qui passait contre un double pouvait
+    // diverger du moteur réel sans que personne ne le voie.
 
     /// Exécuteur d'écho qui ENREGISTRE ce qu'il a exécuté : c'est ce
     /// registre qui prouve la non-répétition d'un effet.
@@ -499,8 +503,32 @@ mod tests {
         }
     }
 
-    fn allow(tool: &str) -> (String, Decision) {
-        (tool.to_owned(), Decision::Allow)
+    /// Règle autorisant un outil sans réserve.
+    fn allow(tool: &str) -> ToolRule {
+        ToolRule {
+            tool_name: tool.to_owned(),
+            allowed: true,
+            requires_approval: false,
+            amount: None,
+            recipients: None,
+            paths: None,
+        }
+    }
+
+    /// Règle exigeant une validation humaine sur chaque appel.
+    fn needs_approval(tool: &str) -> ToolRule {
+        ToolRule {
+            requires_approval: true,
+            ..allow(tool)
+        }
+    }
+
+    /// Appel d'outil réduit à son nom (les bornes sont testées à part).
+    fn call(tool: &str) -> ToolCallRequest {
+        ToolCallRequest {
+            tool_name: tool.to_owned(),
+            ..ToolCallRequest::default()
+        }
     }
 
     fn budget(ceiling: i64, balance: i64) -> Budget {
@@ -509,30 +537,24 @@ mod tests {
 
     fn run(
         actions: Vec<PlannedAction>,
-        decisions: Vec<(String, Decision)>,
+        rules: Vec<ToolRule>,
         state: &mut TaskState,
         approval: Option<ApprovalDecision>,
     ) {
         let model = ScriptedModel { actions };
-        let policy = MapPolicy {
-            decisions: decisions.into_iter().collect(),
-        };
-        drive(state, &model, &policy, &EchoTools::default(), approval);
+        drive(state, &model, &rules, &EchoTools::default(), approval);
     }
 
     /// Comme [`run`], mais rend le registre des exécutions réelles.
     fn run_recording(
         actions: Vec<PlannedAction>,
-        decisions: Vec<(String, Decision)>,
+        rules: Vec<ToolRule>,
         state: &mut TaskState,
         approval: Option<ApprovalDecision>,
     ) -> Vec<(String, u32)> {
         let model = ScriptedModel { actions };
-        let policy = MapPolicy {
-            decisions: decisions.into_iter().collect(),
-        };
         let tools = EchoTools::default();
-        drive(state, &model, &policy, &tools, approval);
+        drive(state, &model, &rules, &tools, approval);
         tools.executed.into_inner()
     }
 
@@ -542,7 +564,7 @@ mod tests {
         run(
             vec![
                 PlannedAction::UseTool {
-                    tool: "doc.read".to_owned(),
+                    request: call("doc.read"),
                     model_cost: Cents(10),
                     tool_cost: Cents(20),
                 },
@@ -577,16 +599,12 @@ mod tests {
         let mut state = TaskState::new(8, budget(10_000, 10_000));
         run(
             vec![PlannedAction::UseTool {
-                tool: "mail.send".to_owned(),
+                request: call("mail.send"),
                 model_cost: Cents(10),
                 tool_cost: Cents(20),
             }],
-            vec![(
-                "mail.send".to_owned(),
-                Decision::Deny {
-                    reason: "outil interdit".to_owned(),
-                },
-            )],
+            // Aucune règle : le refus par défaut du VRAI moteur s'applique.
+            vec![],
             &mut state,
             None,
         );
@@ -603,20 +621,66 @@ mod tests {
     }
 
     #[test]
+    fn the_hard_limit_now_stops_the_call_from_inside_the_loop() {
+        // CE QUE LE TRAIT LOCAL RENDAIT IMPOSSIBLE. Les bornes à deux
+        // étages existaient et étaient testées — mais la boucle ne
+        // transmettait que le NOM de l'outil : le moteur n'a jamais vu un
+        // seul destinataire, et 500 envois seraient passés. Maintenant que
+        // la requête complète voyage, la limite dure arrête l'appel ici.
+        let mut rule = allow("mail.send");
+        rule.recipients = Some(kollega_policy::Bound::two_tier(10u32, 100).unwrap());
+        let mut request = call("mail.send");
+        request.recipient_count = Some(500);
+
+        let mut state = TaskState::new(8, budget(10_000, 10_000));
+        run(
+            vec![PlannedAction::UseTool {
+                request,
+                model_cost: Cents(10),
+                tool_cost: Cents(20),
+            }],
+            vec![rule.clone()],
+            &mut state,
+            None,
+        );
+        assert_eq!(state.status, TaskStatus::Failed, "500 > limite dure 100");
+        assert!(
+            state.audit.iter().any(|e| matches!(
+                e,
+                AuditEvent::ToolCallDenied { reason, .. } if reason.contains("limite dure")
+            )),
+            "le refus doit nommer la limite dure : {:?}",
+            state.audit
+        );
+        assert_eq!(state.budget.consumed(), Cents::ZERO, "rien n'est facturé");
+
+        // Et dans la bande de validation, le dirigeant est appelé.
+        let mut request = call("mail.send");
+        request.recipient_count = Some(50);
+        let mut state = TaskState::new(8, budget(10_000, 10_000));
+        run(
+            vec![PlannedAction::UseTool {
+                request,
+                model_cost: Cents(10),
+                tool_cost: Cents(20),
+            }],
+            vec![rule],
+            &mut state,
+            None,
+        );
+        assert_eq!(state.status, TaskStatus::WaitingApproval, "10 < 50 <= 100");
+    }
+
+    #[test]
     fn scenario_requires_approval_then_suspends() {
         let mut state = TaskState::new(8, budget(10_000, 10_000));
         run(
             vec![PlannedAction::UseTool {
-                tool: "doc.write".to_owned(),
+                request: call("doc.write"),
                 model_cost: Cents(10),
                 tool_cost: Cents(20),
             }],
-            vec![(
-                "doc.write".to_owned(),
-                Decision::RequireApproval {
-                    threshold: "écriture".to_owned(),
-                },
-            )],
+            vec![needs_approval("doc.write")],
             &mut state,
             None,
         );
@@ -631,7 +695,7 @@ mod tests {
         let mut state = TaskState::new(8, budget(25, 10_000));
         run(
             vec![PlannedAction::UseTool {
-                tool: "doc.read".to_owned(),
+                request: call("doc.read"),
                 model_cost: Cents(10),
                 tool_cost: Cents(20), // 30 > plafond 25
             }],
@@ -648,7 +712,7 @@ mod tests {
         let mut state = TaskState::new(8, budget(10_000, 25));
         run(
             vec![PlannedAction::UseTool {
-                tool: "doc.read".to_owned(),
+                request: call("doc.read"),
                 model_cost: Cents(10),
                 tool_cost: Cents(20), // 30 > solde 25
             }],
@@ -665,7 +729,7 @@ mod tests {
         // Scénario avec validation : approuver l'action puis conclure.
         let actions = vec![
             PlannedAction::UseTool {
-                tool: "doc.write".to_owned(),
+                request: call("doc.write"),
                 model_cost: Cents(10),
                 tool_cost: Cents(20),
             },
@@ -674,12 +738,7 @@ mod tests {
                 answer: "écrit".to_owned(),
             },
         ];
-        let decisions = vec![(
-            "doc.write".to_owned(),
-            Decision::RequireApproval {
-                threshold: "écriture".to_owned(),
-            },
-        )];
+        let decisions = vec![needs_approval("doc.write")];
 
         // (a) Parcours direct : suspension, puis reprise avec approbation.
         let mut direct = TaskState::new(8, budget(10_000, 10_000));
@@ -798,12 +857,12 @@ mod tests {
         // identité et ne reconnaîtrait jamais l'effet déjà réalisé.
         let actions = vec![
             PlannedAction::UseTool {
-                tool: "doc.read".to_owned(),
+                request: call("doc.read"),
                 model_cost: Cents(10),
                 tool_cost: Cents(20),
             },
             PlannedAction::UseTool {
-                tool: "mail.send".to_owned(),
+                request: call("mail.send"),
                 model_cost: Cents(10),
                 tool_cost: Cents(20),
             },
@@ -812,15 +871,7 @@ mod tests {
                 answer: "fini".to_owned(),
             },
         ];
-        let decisions = vec![
-            allow("doc.read"),
-            (
-                "mail.send".to_owned(),
-                Decision::RequireApproval {
-                    threshold: "envoi".to_owned(),
-                },
-            ),
-        ];
+        let decisions = vec![allow("doc.read"), needs_approval("mail.send")];
         let mut state = TaskState::new(8, budget(10_000, 10_000));
         // Itération 0 exécutée, itération 1 suspendue en validation.
         let first = run_recording(actions.clone(), decisions.clone(), &mut state, None);
@@ -845,16 +896,11 @@ mod tests {
     #[test]
     fn rejected_approval_fails_the_task() {
         let actions = vec![PlannedAction::UseTool {
-            tool: "doc.write".to_owned(),
+            request: call("doc.write"),
             model_cost: Cents(10),
             tool_cost: Cents(20),
         }];
-        let decisions = vec![(
-            "doc.write".to_owned(),
-            Decision::RequireApproval {
-                threshold: "écriture".to_owned(),
-            },
-        )];
+        let decisions = vec![needs_approval("doc.write")];
         let mut state = TaskState::new(8, budget(10_000, 10_000));
         run(actions.clone(), decisions.clone(), &mut state, None);
         run(
