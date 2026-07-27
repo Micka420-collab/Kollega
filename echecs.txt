@@ -1,0 +1,29 @@
+test the_vertical_slice_goes_through_the_http_server_across_a_restart ... FAILED
+
+failures:
+
+---- the_vertical_slice_goes_through_the_http_server_across_a_restart stdout ----
+
+thread 'the_vertical_slice_goes_through_the_http_server_across_a_restart' (9178) panicked at crates/kollega-api/tests/tranche_over_http.rs:345:5:
+assertion `left == right` failed: la tâche aboutit : {"balance_cents":10000,"conclusion":null,"status":"failed"}
+  left: String("failed")
+ right: "succeeded"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_vertical_slice_goes_through_the_http_server_across_a_restart
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+[1m[91merror[0m: test failed, to rerun pass `-p kollega-api --test tranche_over_http`
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_audit-eb8096bac9c4a60f)
+
+running 41 tests
+test anchor::tests::empty_chain_with_anchor_is_a_truncation ... ok
+test anchor::tests::anchor_of_another_organization_is_refused ... ok
+test anchor::tests::incoherent_chain_is_reported_as_chain_break ... ok
+test anchor::tests::publisher_is_append_only_and_monotonic ... ok
+test anchor::tests::rewrite_after_anchor_is_invisible_until_next_anchor ... ok
+test anchor::tests::older_anchor_still_validates_a_grown_chain ... ok
+test canonical::tests::empty_containers ... ok

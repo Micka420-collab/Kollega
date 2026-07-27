@@ -1,0 +1,741 @@
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m   Compiling[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m serde_core v1.0.229
+[1m[92m   Compiling[0m once_cell v1.21.4
+[1m[92m   Compiling[0m itoa v1.0.18
+[1m[92m   Compiling[0m thiserror v2.0.19
+[1m[92m   Compiling[0m zerocopy v0.8.55
+[1m[92m   Compiling[0m memchr v2.8.3
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m zerofrom v0.1.8
+[1m[92m   Compiling[0m typenum v1.20.1
+[1m[92m   Compiling[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m yoke v0.8.3
+[1m[92m   Compiling[0m zmij v1.0.23
+[1m[92m   Compiling[0m subtle v2.6.1
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m generic-array v0.14.7
+[1m[92m   Compiling[0m serde v1.0.229
+[1m[92m   Compiling[0m uuid v1.24.0
+[1m[92m   Compiling[0m pin-project-lite v0.2.17
+[1m[92m   Compiling[0m zerovec v0.11.6
+[1m[92m   Compiling[0m block-buffer v0.10.4
+[1m[92m   Compiling[0m crypto-common v0.1.7
+[1m[92m   Compiling[0m bitflags v2.13.1
+[1m[92m   Compiling[0m digest v0.10.7
+[1m[92m   Compiling[0m kollega-core v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-core)
+[1m[92m   Compiling[0m futures-core v0.3.33
+[1m[92m   Compiling[0m bytes v1.12.1
+[1m[92m   Compiling[0m tinystr v0.8.3
+[1m[92m   Compiling[0m writeable v0.6.3
+[1m[92m   Compiling[0m litemap v0.8.2
+[1m[92m   Compiling[0m potential_utf v0.1.5
+[1m[92m   Compiling[0m zerotrie v0.2.4
+[1m[92m   Compiling[0m icu_locale_core v2.2.0
+[1m[92m   Compiling[0m ppv-lite86 v0.2.21
+[1m[92m   Compiling[0m serde_json v1.0.151
+[1m[92m   Compiling[0m utf8_iter v1.0.4
+[1m[92m   Compiling[0m icu_collections v2.2.0
+[1m[92m   Compiling[0m cpufeatures v0.2.17
+[1m[92m   Compiling[0m icu_normalizer_data v2.2.0
+[1m[92m   Compiling[0m socket2 v0.6.5
+[1m[92m   Compiling[0m icu_provider v2.2.0
+[1m[92m   Compiling[0m getrandom v0.2.17
+[1m[92m   Compiling[0m mio v1.2.2
+[1m[92m   Compiling[0m icu_properties_data v2.2.0
+[1m[92m   Compiling[0m sha2 v0.10.9
+[1m[92m   Compiling[0m smallvec v1.15.2
+[1m[92m   Compiling[0m futures-sink v0.3.33
+[1m[92m   Compiling[0m icu_properties v2.2.0
+[1m[92m   Compiling[0m percent-encoding v2.3.2
+[1m[92m   Compiling[0m zeroize v1.9.0
+[1m[92m   Compiling[0m scopeguard v1.2.0
+[1m[92m   Compiling[0m equivalent v1.0.2
+[1m[92m   Compiling[0m hex v0.4.3
+[1m[92m   Compiling[0m rustls-pki-types v1.15.1
+[1m[92m   Compiling[0m lock_api v0.4.14
+[1m[92m   Compiling[0m crossbeam-utils v0.8.22
+[1m[92m   Compiling[0m errno v0.3.14
+[1m[92m   Compiling[0m futures-task v0.3.33
+[1m[92m   Compiling[0m untrusted v0.9.0
+[1m[92m   Compiling[0m hashbrown v0.17.1
+[1m[92m   Compiling[0m slab v0.4.12
+[1m[92m   Compiling[0m futures-io v0.3.33
+[1m[92m   Compiling[0m ring v0.17.14
+[1m[92m   Compiling[0m futures-util v0.3.33
+[1m[92m   Compiling[0m signal-hook-registry v1.4.8
+[1m[92m   Compiling[0m indexmap v2.14.0
+[1m[92m   Compiling[0m rand_core v0.6.4
+[1m[92m   Compiling[0m tracing-core v0.1.36
+[1m[92m   Compiling[0m log v0.4.33
+[1m[92m   Compiling[0m time-core v0.1.9
+[1m[92m   Compiling[0m num-conv v0.2.2
+[1m[92m   Compiling[0m allocator-api2 v0.2.21
+[1m[92m   Compiling[0m foldhash v0.1.5
+[1m[92m   Compiling[0m time-macros v0.2.32
+[1m[92m   Compiling[0m hashbrown v0.15.5
+[1m[92m   Compiling[0m rustls-webpki v0.103.13
+[1m[92m   Compiling[0m tokio v1.53.1
+[1m[92m   Compiling[0m concurrent-queue v2.5.0
+[1m[92m   Compiling[0m webpki-roots v1.0.9
+[1m[92m   Compiling[0m icu_normalizer v2.2.0
+[1m[92m   Compiling[0m deranged v0.5.8
+[1m[92m   Compiling[0m tinyvec_macros v0.1.1
+[1m[92m   Compiling[0m parking v2.2.1
+[1m[92m   Compiling[0m powerfmt v0.2.0
+[1m[92m   Compiling[0m crc-catalog v2.5.0
+[1m[92m   Compiling[0m crc v3.4.0
+[1m[92m   Compiling[0m event-listener v5.4.1
+[1m[92m   Compiling[0m tinyvec v1.12.0
+[1m[92m   Compiling[0m idna_adapter v1.2.2
+[1m[92m   Compiling[0m time v0.3.54
+[1m[92m   Compiling[0m webpki-roots v0.26.11
+[1m[92m   Compiling[0m rustls v0.23.42
+[1m[92m   Compiling[0m hashlink v0.10.0
+[1m[92m   Compiling[0m tracing v0.1.44
+[1m[92m   Compiling[0m crossbeam-queue v0.3.13
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m base64 v0.22.1
+[1m[92m   Compiling[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m unicode-normalization v0.1.25
+[1m[92m   Compiling[0m idna v1.1.0
+[1m[92m   Compiling[0m rand_chacha v0.3.1
+[1m[92m   Compiling[0m form_urlencoded v1.2.2
+[1m[92m   Compiling[0m hmac v0.12.1
+[1m[92m   Compiling[0m unicode-bidi v0.3.18
+[1m[92m   Compiling[0m unicode-properties v0.1.4
+[1m[92m   Compiling[0m stringprep v0.1.5
+[1m[92m   Compiling[0m hkdf v0.12.4
+[1m[92m   Compiling[0m url v2.5.8
+[1m[92m   Compiling[0m rand v0.8.7
+[1m[92m   Compiling[0m futures-intrusive v0.5.0
+[1m[92m   Compiling[0m kollega-audit v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-audit)
+[1m[92m   Compiling[0m either v1.17.0
+[1m[92m   Compiling[0m tokio-stream v0.1.19
+[1m[92m   Compiling[0m futures-channel v0.3.33
+[1m[92m   Compiling[0m kollega-policy v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-policy)
+[1m[92m   Compiling[0m md-5 v0.10.6
+[1m[92m   Compiling[0m atoi v2.0.0
+[1m[92m   Compiling[0m byteorder v1.5.0
+[1m[92m   Compiling[0m whoami v1.6.1
+[1m[92m   Compiling[0m dotenvy v0.15.7
+[1m[92m   Compiling[0m home v0.5.12
+[1m[92m   Compiling[0m sqlx-core v0.8.6
+[1m[92m   Compiling[0m kollega-runtime v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-runtime)
+[1m[92m   Compiling[0m regex-syntax v0.8.11
+[1m[92m   Compiling[0m http v1.4.2
+[1m[92m   Compiling[0m sqlx-postgres v0.8.6
+[1m[92m   Compiling[0m http-body v1.1.0
+[1m[92m   Compiling[0m tower-service v0.3.3
+[1m[92m   Compiling[0m httparse v1.10.1
+[1m[92m   Compiling[0m tower-layer v0.3.3
+[1m[92m   Compiling[0m sync_wrapper v1.0.2
+[1m[92m   Compiling[0m atomic-waker v1.1.2
+[1m[92m   Compiling[0m httpdate v1.0.3
+[1m[92m   Compiling[0m http-body-util v0.1.4
+[1m[92m   Compiling[0m hyper v1.11.0
+[1m[92m   Compiling[0m mime v0.3.17
+[1m[92m   Compiling[0m ryu v1.0.23
+[1m[92m   Compiling[0m base64ct v1.8.3
+[1m[92m   Compiling[0m password-hash v0.5.0
+[1m[92m   Compiling[0m hyper-util v0.1.20
+[1m[92m   Compiling[0m serde_urlencoded v0.7.1
+[1m[92m   Compiling[0m axum-core v0.5.6
+[1m[92m   Compiling[0m tower v0.5.3
+[1m[92m   Compiling[0m sqlx-macros-core v0.8.6
+[1m[92m   Compiling[0m blake2 v0.10.6
+[1m[92m   Compiling[0m serde_path_to_error v0.1.20
+[1m[92m   Compiling[0m matchit v0.8.4
+[1m[92m   Compiling[0m axum v0.8.9
+[1m[92m   Compiling[0m argon2 v0.5.3
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m rand_core v0.9.5
+[1m[92m   Compiling[0m sqlx-macros v0.8.6
+[1m[92m   Compiling[0m utf8parse v0.2.2
+[1m[92m   Compiling[0m linux-raw-sys v0.12.1
+[1m[92m   Compiling[0m rustix v1.1.4
+[1m[92m   Compiling[0m sqlx v0.8.6
+[1m[92m   Compiling[0m kollega-store v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-store)
+[1m[92m   Compiling[0m anstyle-parse v1.0.0
+[1m[92m   Compiling[0m anstyle v1.0.14
+[1m[92m   Compiling[0m kollega-api v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-api)
+[1m[92m   Compiling[0m is_terminal_polyfill v1.70.2
+[1m[92m   Compiling[0m fastrand v2.5.0
+[1m[92m   Compiling[0m anstyle-query v1.1.5
+[1m[92m   Compiling[0m colorchoice v1.0.5
+[1m[92m   Compiling[0m anstream v1.0.0
+[1m[92m   Compiling[0m tempfile v3.27.0
+[1m[92m   Compiling[0m regex-automata v0.4.16
+[1m[92m   Compiling[0m wait-timeout v0.2.1
+[1m[92m   Compiling[0m quick-error v1.2.3
+[1m[92m   Compiling[0m bit-vec v0.8.0
+[1m[92m   Compiling[0m fnv v1.0.7
+[1m[92m   Compiling[0m lazy_static v1.5.0
+[1m[92m   Compiling[0m strsim v0.11.1
+[1m[92m   Compiling[0m clap_lex v1.1.0
+[1m[92m   Compiling[0m clap_builder v4.6.2
+[1m[92m   Compiling[0m bit-set v0.8.0
+[1m[92m   Compiling[0m sharded-slab v0.1.7
+[1m[92m   Compiling[0m rusty-fork v0.3.1
+[1m[92m   Compiling[0m rand_chacha v0.9.0
+[1m[92m   Compiling[0m rand_xorshift v0.4.0
+[1m[92m   Compiling[0m rand v0.9.5
+[1m[92m   Compiling[0m tracing-log v0.2.0
+[1m[92m   Compiling[0m serde_spanned v0.6.9
+[1m[92m   Compiling[0m toml_datetime v0.6.11
+[1m[92m   Compiling[0m matchers v0.2.0
+[1m[92m   Compiling[0m thread_local v1.1.10
+[1m[92m   Compiling[0m unarray v0.1.4
+[1m[92m   Compiling[0m winnow v0.7.15
+[1m[92m   Compiling[0m nu-ansi-term v0.50.3
+[1m[92m   Compiling[0m toml_write v0.1.2
+[1m[92m   Compiling[0m tracing-subscriber v0.3.23
+[1m[92m   Compiling[0m toml_edit v0.22.27
+[1m[92m   Compiling[0m clap v4.6.4
+[1m[92m   Compiling[0m proptest v1.11.0
+[1m[92m   Compiling[0m anyhow v1.0.104
+[1m[92m   Compiling[0m kollega-model v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-model)
+[1m[92m   Compiling[0m kollega-memory v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-memory)
+[1m[92m   Compiling[0m kollega-tools v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-tools)
+[1m[92m   Compiling[0m kollega-cli v0.1.0 (/home/runner/work/Kollega/Kollega/crates/kollega-cli)
+[1m[92m   Compiling[0m toml v0.8.23
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 31.72s
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_api-95fef3c8cefb789d)
+
+running 15 tests
+test auth::tests::below_floor_is_rejected ... ok
+test auth::tests::absurd_iterations_and_parallelism_are_rejected_too ... ok
+test auth::tests::corrupt_stored_hash_is_an_error_not_a_mismatch ... ok
+test auth::tests::errors_never_echo_the_password ... ok
+test auth::tests::absurd_memory_is_rejected_without_allocating ... ok
+test auth::tests::foreign_algorithm_is_an_anomaly ... ok
+test auth::tests::beyond_the_gate_verifications_wait_they_do_not_fail ... ok
+test auth::tests::legacy_weak_profile_above_floor_is_accepted_and_flagged_for_rehash ... ok
+test auth::tests::rehash_produces_current_profile ... ok
+test auth::tests::round_trip_accepts_correct_password ... ok
+test auth::tests::ceiling_is_64_mib_exactly ... ok
+test auth::tests::stored_format_is_argon2id_phc_with_fixed_params ... ok
+test auth::tests::same_password_gives_different_hashes ... ok
+test auth::tests::wrong_password_is_invalid_without_error ... ok
+test auth::tests::saturation_never_turns_into_failure ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.03s
+
+[1m[92m     Running[0m tests/graceful_shutdown.rs (target/debug/deps/graceful_shutdown-ce6b9327ea5d8f61)
+
+running 1 test
+test the_server_answers_then_stops_cleanly_on_the_shutdown_signal ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/health_endpoint.rs (target/debug/deps/health_endpoint-1072d30073660d26)
+
+running 1 test
+test the_server_actually_starts_and_answers_on_health ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+[1m[92m     Running[0m tests/tasks_over_http.rs (target/debug/deps/tasks_over_http-cfe70d39838d9df7)
+
+running 1 test
+test a_task_is_written_and_read_back_through_http_and_never_across_orgs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+[1m[92m     Running[0m tests/tranche_over_http.rs (target/debug/deps/tranche_over_http-625f92c343106bf3)
+
+running 1 test
+test the_vertical_slice_goes_through_the_http_server_across_a_restart ... FAILED
+
+failures:
+
+---- the_vertical_slice_goes_through_the_http_server_across_a_restart stdout ----
+
+thread 'the_vertical_slice_goes_through_the_http_server_across_a_restart' (9178) panicked at crates/kollega-api/tests/tranche_over_http.rs:345:5:
+assertion `left == right` failed: la tâche aboutit : {"balance_cents":10000,"conclusion":null,"status":"failed"}
+  left: String("failed")
+ right: "succeeded"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_vertical_slice_goes_through_the_http_server_across_a_restart
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+[1m[91merror[0m: test failed, to rerun pass `-p kollega-api --test tranche_over_http`
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_audit-eb8096bac9c4a60f)
+
+running 41 tests
+test anchor::tests::empty_chain_with_anchor_is_a_truncation ... ok
+test anchor::tests::anchor_of_another_organization_is_refused ... ok
+test anchor::tests::incoherent_chain_is_reported_as_chain_break ... ok
+test anchor::tests::publisher_is_append_only_and_monotonic ... ok
+test anchor::tests::rewrite_after_anchor_is_invisible_until_next_anchor ... ok
+test anchor::tests::older_anchor_still_validates_a_grown_chain ... ok
+test canonical::tests::empty_containers ... ok
+test canonical::tests::nested_structures_encode_without_spaces ... ok
+test anchor::tests::valid_chain_with_current_anchor_passes ... ok
+test anchor::tests::truncations_of_one_n_and_all_are_detected ... ok
+test canonical::tests::object_keys_are_sorted_bytewise ... ok
+test anchor::tests::rewritten_suffix_is_detected_by_anchor ... ok
+test canonical::tests::text_escaping_is_fixed ... ok
+test canonical::tests::scalars_encode_exactly ... ok
+test chain::tests::a_produced_entry_always_tells_the_truth_a_stored_one_may_lie ... ok
+test chain::tests::altered_timestamp_detected ... ok
+test chain::tests::chain_of_org_a_does_not_verify_as_org_b ... ok
+test chain::tests::empty_chain_is_valid ... ok
+test chain::tests::altered_payload_detected_at_position ... ok
+test chain::tests::genesis_with_prev_hash_is_broken ... ok
+test chain::tests::entry_moved_one_position_is_detected ... ok
+test chain::tests::hash_depends_on_prev ... ok
+test chain::tests::full_suffix_rewrite_is_caught_by_anchor_only ... ok
+test chain::tests::removed_middle_entry_detected ... ok
+test chain::tests::reordered_entries_detected ... ok
+test chain::tests::same_content_at_different_heights_hashes_differently ... ok
+test chain::tests::single_entry_chain_is_valid ... ok
+test content::tests::audit_content_digest_always_matches_its_payload ... ok
+test content::tests::digest_is_computed_never_asserted ... ok
+test records::tests::a_restart_looks_like_operations_not_like_forgery ... ok
+test records::tests::any_record_after_closure_is_a_violation_including_intent ... ok
+test records::tests::both_abandon_reasons_close_a_call_identically ... ok
+test records::tests::closure_without_intent_is_a_violation ... ok
+test records::tests::duplicate_closure_is_a_violation ... ok
+test chain::tests::long_chain_is_valid ... ok
+test records::tests::duplicate_intent_is_a_violation ... ok
+test records::tests::intent_then_abandoned_is_valid ... ok
+test records::tests::mixed_sequence_reports_everything_with_positions ... ok
+test chain::tests::tail_truncation_is_invisible_to_verify_but_caught_with_anchor ... ok
+test records::tests::open_intent_is_information_not_violation ... ok
+test chain::tests::verify_with_tail_on_empty_chain ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/canonical_injectivity.rs (target/debug/deps/canonical_injectivity-7ddd34b0d69f1578)
+
+running 6 tests
+test backslash_before_quote_is_unambiguous ... ok
+test empty_containers_and_nesting_round_trip ... ok
+test text_imitating_container_does_not_collide_with_container ... ok
+test key_containing_quote_and_separator_does_not_collide ... ok
+test encode_is_injective_via_round_trip ... ok
+test distinct_values_distinct_encodings ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.12s
+
+[1m[92m     Running[0m tests/chain_properties.rs (target/debug/deps/chain_properties-5d7e0da05be629a2)
+
+running 5 tests
+test interior_insertion_detected ... ok
+test content_mutation_detected_at_position ... ok
+test intact_chain_verifies ... ok
+test adjacent_swap_detected ... ok
+test middle_deletion_detected_at_position ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+[1m[92m     Running[0m tests/diff_vectors.rs (target/debug/deps/diff_vectors-b1dc55282c43d4b3)
+
+running 1 test
+test emit_differential_vectors ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/reference_vectors.rs (target/debug/deps/reference_vectors-211b022ace50cf53)
+
+running 1 test
+test reference_vectors_are_stable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m unittests src/main.rs (target/debug/deps/kollega-37412028d0e17074)
+
+running 1 test
+test tests::cli_definition_is_valid ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/audit_verify_command.rs (target/debug/deps/audit_verify_command-8126df5f2028556a)
+
+running 1 test
+test audit_verify_says_yes_on_a_sound_chain_and_no_on_a_broken_one ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+
+[1m[92m     Running[0m tests/claims_are_backed.rs (target/debug/deps/claims_are_backed-99e9b4c3c5a4b8ce)
+
+running 4 tests
+test the_proposed_corrections_quote_the_constitution_verbatim ... ok
+test every_adr_title_matches_its_file_number ... ok
+test the_matrix_covers_exactly_the_invariants_of_the_constitution ... ok
+test every_test_named_in_the_matrix_actually_exists ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+[1m[92m     Running[0m tests/dependency_graph.rs (target/debug/deps/dependency_graph-ecf05cf81e91eb19)
+
+running 3 tests
+test the_domain_never_draws_randomness ... ok
+test dependency_graph_is_respected ... ok
+test core_transitive_closure_contains_no_io_crate ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+[1m[92m     Running[0m tests/deployment_env.rs (target/debug/deps/deployment_env-4aa5c05997818ba2)
+
+running 1 test
+test the_deployment_provides_every_variable_the_binary_reads ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/integration_tests_ran.rs (target/debug/deps/integration_tests_ran-f3374efb52bacc5a)
+
+running 2 tests
+test in_ci_no_integration_test_may_skip ... ok
+test every_test_gate_uses_a_variable_the_ci_guard_covers ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/migrations_shape.rs (target/debug/deps/migrations_shape-5a34a63161000959)
+
+running 1 test
+test every_migration_is_reversible_or_says_why_not ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/no_byte_order_mark.rs (target/debug/deps/no_byte_order_mark-0fe466d534644a6b)
+
+running 1 test
+test no_source_file_starts_with_a_byte_order_mark ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/no_placebo_tests.rs (target/debug/deps/no_placebo_tests-2d022f197f0319e8)
+
+running 1 test
+test no_test_has_an_empty_body ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/orphan_crates.rs (target/debug/deps/orphan_crates-ff45a54a49d00f53)
+
+running 1 test
+test the_inventory_of_unwired_crates_is_exact ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/repository_shape.rs (target/debug/deps/repository_shape-0b0d13d3d39b7627)
+
+running 2 tests
+test the_chain_repository_cannot_express_removal ... ok
+test no_sql_ever_removes_or_rewrites_a_chain_entry ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/schema_claims.rs (target/debug/deps/schema_claims-9f494737828da4ed)
+
+running 1 test
+test no_document_names_a_column_that_does_not_exist ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/sql_context_guard.rs (target/debug/deps/sql_context_guard-4943da5311d3a9d7)
+
+running 2 tests
+test guard_distinguishes_session_set_from_sql_assignment ... ok
+test context_is_only_set_via_local_parameterized_set_config ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+[1m[92m     Running[0m tests/storage_boundary.rs (target/debug/deps/storage_boundary-9ed4361d538a8a77)
+
+running 1 test
+test from_storage_is_only_reachable_from_the_persistence_crate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_core-5fd1b8224d6982ae)
+
+running 35 tests
+test identity::tests::email_accepts_and_normalizes ... ok
+test identity::tests::email_deserialization_revalidates ... ok
+test identity::tests::email_boundary_lengths ... ok
+test identity::tests::role_matches_schema_strings ... ok
+test identity::tests::email_rejects_invalid ... ok
+test identity::tests::email_error_messages_do_not_echo_input ... ok
+test ids::tests::ids_display_as_uuid ... ok
+test ids::tests::ids_serialize_as_bare_uuid_strings ... ok
+test ids::tests::same_uuid_different_types_are_still_distinct_types ... ok
+test prompt::tests::empty_external_content_is_fine ... ok
+test prompt::tests::external_content_is_transported_verbatim ... ok
+test prompt::tests::missing_or_duplicate_roles_are_errors ... ok
+test prompt::tests::serialized_form_keeps_origins_explicit ... ok
+test prompt::tests::structure_is_enforced ... ok
+test prompt::tests::truncation_respects_multibyte_boundaries ... ok
+test tests::cents_checked_add_detects_overflow ... ok
+test tests::cents_orders_as_integers ... ok
+test tests::cents_rejects_non_integer_json ... ok
+test tests::cents_saturating_add_caps_at_max ... ok
+test tests::cents_serializes_as_bare_integer ... ok
+test tests::classification_matches_schema_strings ... ok
+test tests::classification_orders_by_sensitivity ... ok
+test tests::cost_ceiling_exceeded_is_strict ... ok
+test tests::decision_variant_names_match_schema_strings ... ok
+test tests::external_content_requires_source_and_classification ... ok
+test tests::risk_orders_by_escalation ... ok
+test prompt::tests::truncation_at_exact_limit_is_not_flagged ... ok
+test tests::task_status_matches_schema_strings ... ok
+test tests::segment_round_trip_preserves_variant ... ok
+test tests::segment_serialized_forms_are_stable ... ok
+test tests::waiting_approval_is_not_terminal ... ok
+test prompt::tests::truncation_is_flagged_and_kept_prefix_is_verbatim ... ok
+test timestamp::tests::round_trip_is_lossless_at_type_precision ... ok
+test timestamp::tests::truncates_to_the_microsecond_from_every_entry_path ... ok
+test timestamp::tests::out_of_range_clocks_saturate_instead_of_panicking ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/properties.rs (target/debug/deps/properties-2551902435b814d0)
+
+running 6 tests
+test cents_checked_add_matches_exact_arithmetic ... ok
+test cents_saturating_add_is_clamped_exact ... ok
+test cents_addition_is_associative_when_in_range ... ok
+test email_case_folds_but_distinct_stays_distinct ... ok
+test email_normalization_is_idempotent ... ok
+test compile_transports_external_content_verbatim ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+[1m[92m     Running[0m tests/segment_assembly.rs (target/debug/deps/segment_assembly-9ef54893359bf68e)
+
+running 4 tests
+test hostile_content_never_reaches_instruction_fields ... ok
+test hostile_content_is_transported_intact ... ok
+test serialized_prompt_keeps_hostile_content_as_data ... ok
+test very_long_hostile_content_is_truncated_explicitly ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_memory-ede23b03d0ad211a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_model-d59a1eda466fa115)
+
+running 2 tests
+test tests::api_key_never_leaks_through_formatting_or_errors ... ok
+test tests::scripted_provider_replays_every_real_failure_mode ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_policy-65b3db9c9d3924f1)
+
+running 22 tests
+test tests::amount_hard_only_has_two_zones ... ok
+test tests::disallowed_tool_is_denied_even_within_limits ... ok
+test tests::amount_two_tier_has_three_zones ... ok
+test tests::empty_prefix_list_denies_all_paths ... ok
+test tests::empty_prefix_in_list_is_a_protocol_violation_not_a_wildcard ... ok
+test tests::first_matching_rule_wins ... ok
+test tests::hard_violation_wins_over_approval_band ... ok
+test tests::every_outcome_carries_a_nonempty_matching_reason ... ok
+test tests::hard_limit_wins_over_approval_flag ... ok
+test tests::multiple_approval_bands_merge_into_one_approval ... ok
+test tests::no_path_restriction_allows_any_path ... ok
+test tests::no_rules_at_all_denies_everything ... ok
+test tests::one_bad_path_among_good_ones_applies_the_mode ... ok
+test tests::path_bound_table_both_modes ... ok
+test tests::recipient_two_tier_stops_the_500_mail_blast ... ok
+test tests::protocol_violations_deny_even_with_soft_path_bound ... ok
+test tests::requires_approval_after_bounds_pass ... ok
+test tests::reasons_name_the_tier_that_played ... ok
+test tests::two_tier_rejects_threshold_above_hard_limit ... ok
+test tests::undeclared_recipients_are_denied_even_with_approval_band ... ok
+test tests::undeclared_amount_is_denied_even_with_approval_band ... ok
+test tests::unknown_tool_is_denied_by_default ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/properties.rs (target/debug/deps/properties-20d373ba0f45d22b)
+
+running 6 tests
+test beyond_hard_limit_is_always_denied_never_approvable ... ok
+test every_decision_has_a_reason ... ok
+test decide_is_deterministic ... ok
+test protocol_violations_always_deny ... ok
+test no_matching_rule_always_denies ... ok
+test appending_rules_never_changes_an_existing_match ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_runtime-a41bfdae8743efb6)
+
+running 22 tests
+test budget::tests::a_negative_state_is_refused_at_construction_and_at_refresh ... ok
+test budget::tests::ceiling_checked_before_credit ... ok
+test budget::tests::exact_balance_is_allowed_and_reaches_zero ... ok
+test budget::tests::exact_ceiling_is_allowed_but_one_more_aborts ... ok
+test budget::tests::huge_cost_does_not_overflow_past_the_ceiling ... ok
+test budget::tests::insufficient_credit_aborts_without_billing ... ok
+test budget::tests::negative_cost_is_a_usage_error ... ok
+test budget::tests::proceeds_within_both_bounds ... ok
+test machine::tests::a_real_v1_envelope_is_refused_not_silently_misread ... ok
+test machine::tests::envelope_round_trips_and_carries_the_current_version ... ok
+test machine::tests::inconsistent_suspension_without_pending_fails_cleanly ... ok
+test machine::tests::scenario_cost_ceiling ... ok
+test machine::tests::scenario_credit_exhausted ... ok
+test machine::tests::rejected_approval_fails_the_task ... ok
+test machine::tests::scenario_denied_by_policy ... ok
+test machine::tests::scenario_nominal ... ok
+test machine::tests::scenario_requires_approval_then_suspends ... ok
+test machine::tests::the_hard_limit_now_stops_the_call_from_inside_the_loop ... ok
+test machine::tests::scenario_resume_after_interruption_is_identical ... ok
+test machine::tests::the_resumed_call_keeps_the_identity_it_had_before_the_interruption ... ok
+test machine::tests::unknown_envelope_version_is_refused_cleanly_not_misread ... ok
+test budget::tests::balance_never_negative_and_debits_are_conserved ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_store-7b83c2bd105060cd)
+
+running 5 tests
+test driver::tests::a_clock_before_the_epoch_yields_a_negative_stamp_not_zero ... ok
+test driver::tests::the_derived_identity_is_a_well_formed_uuid ... ok
+test driver::tests::the_derived_identity_is_stable_across_calls ... ok
+test driver::tests::two_tasks_at_the_same_iteration_never_share_an_identity ... ok
+test driver::tests::two_iterations_of_one_task_never_share_an_identity ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/credits_concurrency.rs (target/debug/deps/credits_concurrency-1eea33584f655a19)
+
+running 2 tests
+test the_cost_ceiling_stops_the_task_cleanly_and_bills_nothing ... ok
+test two_concurrent_tasks_never_overdraw_the_credit ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+[1m[92m     Running[0m tests/no_physical_deletion.rs (target/debug/deps/no_physical_deletion-a64811d212446127)
+
+running 1 test
+test the_application_role_cannot_physically_delete_anything_but_purgeable_content ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+[1m[92m     Running[0m tests/replay_after_purge.rs (target/debug/deps/replay_after_purge-5eb02de401d39290)
+
+running 1 test
+test a_replay_after_the_rgpd_purge_refuses_instead_of_resending ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+[1m[92m     Running[0m tests/rls_isolation.rs (target/debug/deps/rls_isolation-e00cc45f3d2a5d94)
+
+running 1 test
+test tenant_isolation_holds_and_the_test_is_sensitive ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+
+[1m[92m     Running[0m tests/rls_structural.rs (target/debug/deps/rls_structural-3ce033020f776def)
+
+running 1 test
+test every_tenant_table_has_forced_rls_and_a_policy ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+[1m[92m     Running[0m tests/schema_constraints.rs (target/debug/deps/schema_constraints-a6a28391c3f321b5)
+
+running 1 test
+test the_schema_itself_refuses_an_overdraft_and_a_duplicate_email ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+[1m[92m     Running[0m tests/sequence_detects_violations.rs (target/debug/deps/sequence_detects_violations-8697162d2f4252d7)
+
+running 1 test
+test the_sequence_validator_names_every_forbidden_shape ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+[1m[92m     Running[0m tests/task_lookup.rs (target/debug/deps/task_lookup-ee7a1e614cf4f495)
+
+running 1 test
+test a_task_of_another_org_is_indistinguishable_from_a_missing_one ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+[1m[92m     Running[0m tests/vertical_slice.rs (target/debug/deps/vertical_slice-1ff0752a6a6c83a0)
+
+running 1 test
+test the_vertical_slice_goes_through ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/kollega_tools-506d430af2387d69)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m   Doc-tests[0m kollega_api
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m   Doc-tests[0m kollega_audit
+
+running 1 test
+test crates/kollega-audit/src/chain.rs - chain::ChainedEntry (line 72) - compile fail ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+[1m[92m   Doc-tests[0m kollega_core
+
+running 1 test
+test crates/kollega-core/src/ids.rs - ids (line 8) - compile fail ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+[1m[92m   Doc-tests[0m kollega_memory
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m   Doc-tests[0m kollega_model
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m   Doc-tests[0m kollega_policy
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m   Doc-tests[0m kollega_runtime
+
+running 1 test
+test crates/kollega-runtime/src/machine.rs - machine::ExecutionPermit (line 98) - compile fail ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+[1m[92m   Doc-tests[0m kollega_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m   Doc-tests[0m kollega_tools
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[91merror[0m: 1 target failed:
+    `-p kollega-api --test tranche_over_http`
