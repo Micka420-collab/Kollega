@@ -143,6 +143,61 @@ fn the_matrix_covers_exactly_the_invariants_of_the_constitution() {
     );
 }
 
+/// Les corrections proposées citent la constitution TELLE QU'ELLE EST.
+///
+/// `docs/claude-md-corrections-proposees.md` cite quatre extraits de
+/// `CLAUDE.md` sous la mention « Actuel », et propose un remplacement pour
+/// chacun. Le jour où le propriétaire applique l'une de ces corrections, le
+/// document continuera de citer l'ANCIEN texte comme s'il était le texte
+/// courant — et le lecteur suivant tentera d'appliquer une correction déjà
+/// faite, voire de la défaire en croyant réparer une régression.
+///
+/// La garde rougit alors, ce qui est exactement le moment utile : il faut
+/// retirer l'entrée devenue sans objet. Comme pour l'inventaire des crates
+/// orphelines, le rouge signale un CHANGEMENT D'ÉTAT, pas une faute.
+///
+/// Elle LIT `CLAUDE.md`, elle ne l'écrit jamais.
+#[test]
+fn the_proposed_corrections_quote_the_constitution_verbatim() {
+    let root = repo_root();
+    let constitution = fs::read_to_string(root.join("CLAUDE.md")).expect("CLAUDE.md doit exister");
+    let proposals = fs::read_to_string(root.join("docs/claude-md-corrections-proposees.md"))
+        .expect("le document de corrections doit exister");
+
+    // Chaque bloc « **Actuel** … : » est suivi d'une citation en `> `.
+    let mut quoted = Vec::new();
+    let mut lines = proposals.lines();
+    while let Some(line) = lines.next() {
+        if !line.trim_start().starts_with("**Actuel**") {
+            continue;
+        }
+        // La citation peut suivre immédiatement ou après une ligne vide.
+        for candidate in lines.by_ref().take(2) {
+            if let Some(text) = candidate.strip_prefix("> ") {
+                quoted.push(text.trim().to_owned());
+                break;
+            }
+        }
+    }
+    assert!(
+        quoted.len() >= 4,
+        "extraction suspecte : {} citations trouvées, le document en compte quatre",
+        quoted.len()
+    );
+
+    let stale: Vec<&String> = quoted
+        .iter()
+        .filter(|text| !constitution.contains(text.as_str()))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "des corrections proposées citent un texte que CLAUDE.md ne contient \
+         PLUS : {stale:?}. Si la correction a été appliquée, retirer l'entrée \
+         du document — sinon le prochain lecteur croira devoir la refaire, ou \
+         la défera en croyant réparer une régression."
+    );
+}
+
 /// Le numéro d'un ADR, dans son titre, est celui de son fichier.
 ///
 /// Deux ADR portaient un titre faux — `0003` s'annonçait « ADR 0002 », et
