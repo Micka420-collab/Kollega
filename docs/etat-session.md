@@ -262,6 +262,23 @@
 >     immobiliserait un cœur des dizaines de secondes à chaque connexion
 >     sans rien allouer d'anormal, et le plafond mémoire ne l'arrête pas.
 >
+> 28. **Le test d'isolation ne détruisait pas seulement SES données.**
+>     `cargo test` exécute les binaires en parallèle contre la même base.
+>     Trois dangers dans le seul `rls_isolation`, c'est-à-dire dans la
+>     preuve la plus importante du dépôt. (a) Un `TRUNCATE … CASCADE`
+>     **global** effaçait tâches, attestations, crédits et effets de tous
+>     les tests tournant au même instant. (b) Sa preuve de sensibilité
+>     comptait les utilisateurs de TOUTE la base : l'assertion « exactement
+>     2 » dépendait de ce que les autres binaires faisaient au même moment.
+>     (c) Le pire, vu en dernier : `ALTER TABLE … DISABLE ROW LEVEL
+>     SECURITY` agit **globalement**, et pendant cette fenêtre
+>     `rls_structural` — qui affirme l'inverse — pouvait échantillonner.
+>     Deux tests corrects, un rouge intermittent, et une cause qu'on
+>     chercherait dans les migrations. Corrigé : suppressions ciblées,
+>     comptage borné, verrou consultatif partagé.
+>     **Hypothèse, pas certitude** : le rouge inexpliqué de la run n°41,
+>     imputé à l'époque à l'infrastructure, pourrait venir de là.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
