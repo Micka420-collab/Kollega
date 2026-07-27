@@ -61,6 +61,26 @@
 >    démarre pas. La garde a rougi sur ce défaut réel dès sa première
 >    exécution, sans sabotage artificiel.
 >
+> 10. **Toute preuve existante a été vue ROUGE.** La matrice porte
+>     désormais une rubrique « Sensibilité » qui le dit invariant par
+>     invariant, avec l'évidence. Les dernières falsifiées : refus par
+>     défaut inversé (2), contenu externe concaténé à l'instruction (7),
+>     rechargement du solde retiré (5), `audit verify` rendant 0 sur
+>     chaîne rompue (4), appel en attente perdu à la relecture (tranche
+>     verticale, rouge à deux niveaux).
+> 11. **`--no-fail-fast` posé dans la CI, et ce n'est pas du confort.**
+>     Sans lui, cargo s'arrête au premier binaire en échec : mon premier
+>     essai sur la tranche verticale a conclu que le test sur base réelle
+>     ne détectait rien, alors qu'il n'avait jamais tourné. **Un test qui
+>     n'a pas tourné ressemble en tout point à un test qui n'a rien vu** —
+>     un sabotage peut donc mentir dans le sens rassurant, qui est le
+>     pire. Le même piège s'était produit le même jour en local.
+> 12. **Faille dans ma propre garde** `migrations_shape` : le plancher de
+>     justification comptait tout le fichier, SQL compris — dix lignes de
+>     DDL suffisaient à franchir les 60 caractères. La règle paraissait
+>     stricte et était vide. Corrigée : seul le bloc de commentaire qui
+>     suit le marqueur compte.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
