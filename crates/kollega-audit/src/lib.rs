@@ -53,6 +53,7 @@ pub mod canonical;
 pub mod chain;
 pub mod content;
 pub mod records;
+pub mod repository;
 
 pub use anchor::{Anchor, AnchorPublisher, AnchorViolation, InMemoryAnchorPublisher};
 pub use canonical::CanonicalValue;
