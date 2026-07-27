@@ -1,16 +1,32 @@
 # État de session — mis à jour après chaque bloc
 
-> **Nuit du 28 au 29/07/2026 — session en boucle auto-cadencée.** Les six
-> priorités du brief sont faites, PUIS quatre invariants ont été promus
-> (2, 5 partiellement, 6, 12) et sept trouvailles d'intégration
-> consignées. **Neuf invariants sur treize sont prouvés par un test
-> exécuté.** Rapport complet et à jour :
-> `docs/rapport-nuit-2026-07-29.md`. Dernière CI verte : **n°45**.
+> **Nuit du 28 au 29/07/2026 — session en boucle auto-cadencée. TERMINÉE.**
 >
-> Reste ouvert et appartient à Micka : le coût réel (pas de clé d'API),
-> l'invariant 5 « vérifié AVANT l'appel de modèle » (trois options dans
-> `questions-nuit.md`), l'effacement logique jamais écrit, et
-> `ToolRunner` qui reste un trait public.
+> Les six priorités du brief ont été faites, puis cinq invariants ont été
+> promus (2, 5 partiellement, 6, 12) et huit trouvailles d'intégration
+> consignées. **Neuf invariants sur treize sont prouvés par un test
+> exécuté** ; 190 tests, dernière CI verte **n°50**. Rapport complet :
+> `docs/rapport-nuit-2026-07-29.md`.
+>
+> **Pourquoi la boucle s'est arrêtée là** : le travail identifié est fait,
+> et ce qui reste ne peut pas avancer sans toi ou sort du jalon en cours.
+> Continuer aurait produit du code spéculatif — ce que CLAUDE.md interdit
+> (« rien hors périmètre, même si c'est facile »).
+>
+> **Ce qui t'attend, par ordre de valeur :**
+> 1. **Le coût réel** — une clé d'API, un seul appel sur le modèle le moins
+>    cher. C'est ce chiffre qui fixe un prix ; `docs/economie-unitaire.md`
+>    l'attend, et rien d'autre ne le débloque.
+> 2. **L'invariant 5, « vérifié AVANT l'appel de modèle »** — trois options
+>    dans `questions-nuit.md`, ma recommandation posée (seuil plancher,
+>    puis corriger CLAUDE.md par ADR). Non tranché : cela engage le produit
+>    ET la constitution.
+> 3. **L'effacement logique** — `deleted_at` existe dans le schéma, aucun
+>    code ne le pose. Écrire un `soft_delete` sans cas d'usage serait
+>    spéculatif ; il faut d'abord savoir QUI efface quoi et depuis où.
+> 4. Décisions produit en attente : modèle M4 « relance client », canal
+>    expert-comptable, et l'engagement de maintenance des digests de base
+>    (`deploy/README-bases.md`).
 
 
 Session en cours : 28/07/2026, deuxième session de jour (suite directe).

@@ -11,7 +11,7 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 ## État réel au 28/07/2026
 
-`cargo test --workspace` : **155 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
+`cargo test --workspace` : **190 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
 
 Le journal ne se contente pas d'être intact : **sa séquence est vérifiée sur les données réelles** — pas de clôture sans intention, pas d'intention en double, rien après une clôture. Un appel resté ouvert (validation en attente, redémarrage) est signalé comme *information*, jamais comme corruption : sans cette asymétrie, une panne banale ressemblerait à une falsification.
 
