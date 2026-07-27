@@ -212,6 +212,17 @@ fn status_str(status: TaskStatus) -> Result<String, StoreError> {
     }
 }
 
+/// Inverse de [`status_str`] : la colonne `tasks.status` relue en type.
+///
+/// Écrit ici, contre son aller, pour que les deux sens partagent la forme
+/// sérialisée. Un statut illisible est une donnée corrompue à traiter, pas
+/// une valeur à deviner : on ne retombe sur aucun défaut.
+fn status_from_str(status: &str) -> Result<TaskStatus, StoreError> {
+    serde_json::from_value(serde_json::Value::String(status.to_owned())).map_err(|e| {
+        StoreError::CorruptState(format!("statut persisté illisible « {status} » : {e}"))
+    })
+}
+
 /// Dépôt de CHAÎNE adossé à PostgreSQL, dans la transaction du pas.
 ///
 /// Bloc 3f : le pilote ne parle plus à `audit_chain` en SQL libre, il passe
@@ -463,6 +474,36 @@ pub async fn create_task(
         .await?;
     tx.commit().await?;
     Ok(())
+}
+
+/// Statut d'une tâche, LU dans le contexte de son organisation.
+///
+/// `None` si la tâche n'existe pas — ou si elle appartient à une AUTRE
+/// organisation, la RLS la rendant alors invisible. Les deux cas sont
+/// délibérément indiscernables : distinguer « n'existe pas » de
+/// « appartient à quelqu'un d'autre » donnerait de quoi énumérer les tâches
+/// d'autrui en observant les réponses.
+///
+/// # Errors
+///
+/// [`StoreError::Database`] si la lecture échoue, [`StoreError::CorruptState`]
+/// si le statut persisté n'est pas un statut connu.
+pub async fn read_task_status(
+    db: &Db,
+    org_id: Uuid,
+    task_id: Uuid,
+) -> Result<Option<TaskStatus>, StoreError> {
+    let mut tx = db.org_transaction(org_id).await?;
+    let row = sqlx::query("SELECT status FROM tasks WHERE id = $1")
+        .bind(task_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let status: String = row.get(0);
+    status_from_str(&status).map(Some)
 }
 
 /// Fait avancer une tâche d'un PAS persisté : relecture de l'enveloppe,

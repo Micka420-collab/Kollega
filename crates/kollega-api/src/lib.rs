@@ -7,15 +7,87 @@
 
 pub mod auth;
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use kollega_store::Db;
 
 /// Construit le routeur HTTP de l'application.
 pub fn router(db: Db) -> Router {
-    Router::new().route("/health", get(health)).with_state(db)
+    Router::new()
+        .route("/health", get(health))
+        .route("/orgs/{org}/tasks/{task}", post(create_task).get(read_task))
+        .with_state(db)
+}
+
+/// Corps de création d'une tâche.
+#[derive(serde::Deserialize)]
+pub struct NewTask {
+    /// Plafond de coût de la tâche, en centimes.
+    pub ceiling_cents: i64,
+    /// Nombre maximal d'itérations.
+    pub max_iterations: u32,
+}
+
+/// ÉCRITURE réelle à travers le point de passage unique.
+///
+/// # L'organisation vient du CHEMIN, et c'est provisoire
+///
+/// Il n'y a pas encore de session : l'authentification est le jalon M1. En
+/// attendant, l'organisation est prise dans l'URL — ce qui signifie qu'un
+/// client peut désigner n'importe laquelle. **Cela ne doit jamais atteindre
+/// la production en l'état** : l'organisation devra venir de la session,
+/// jamais de la requête.
+///
+/// Ce qui limite déjà les dégâts, et qu'il faut connaître pour ne pas s'en
+/// contenter : la RLS ne rend visibles que les lignes de l'organisation
+/// posée dans le contexte. Un client qui désigne l'organisation d'un autre
+/// n'obtient donc pas ses données — il peut en revanche ÉCRIRE chez elle,
+/// puisque le contexte qu'il a choisi devient le sien. C'est exactement la
+/// raison pour laquelle ce raccourci est un échafaudage, pas une solution.
+async fn create_task(
+    State(db): State<Db>,
+    Path((org, task)): Path<(uuid::Uuid, uuid::Uuid)>,
+    axum::Json(body): axum::Json<NewTask>,
+) -> (StatusCode, &'static str) {
+    match kollega_store::driver::create_task(
+        &db,
+        org,
+        task,
+        kollega_core::Cents(body.ceiling_cents),
+        body.max_iterations,
+    )
+    .await
+    {
+        Ok(()) => (StatusCode::CREATED, "créée"),
+        Err(e) => {
+            tracing::error!(erreur = %e, "création de tâche impossible");
+            (StatusCode::UNPROCESSABLE_ENTITY, "création impossible")
+        }
+    }
+}
+
+/// LECTURE réelle à travers le point de passage unique.
+///
+/// Une tâche d'une autre organisation rend `404`, comme une tâche
+/// inexistante : les deux sont indiscernables par construction, ce qui
+/// interdit d'énumérer les tâches d'autrui en observant les réponses.
+async fn read_task(
+    State(db): State<Db>,
+    Path((org, task)): Path<(uuid::Uuid, uuid::Uuid)>,
+) -> (StatusCode, String) {
+    match kollega_store::driver::read_task_status(&db, org, task).await {
+        Ok(Some(status)) => (StatusCode::OK, format!("{status:?}")),
+        Ok(None) => (StatusCode::NOT_FOUND, "inconnue".to_owned()),
+        Err(e) => {
+            tracing::error!(erreur = %e, "lecture de tâche impossible");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "lecture impossible".to_owned(),
+            )
+        }
+    }
 }
 
 /// Sert jusqu'à ce que `shutdown` s'achève, puis s'arrête PROPREMENT.

@@ -895,10 +895,14 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "axum",
+ "kollega-core",
  "kollega-store",
+ "serde",
  "sqlx",
  "thiserror",
  "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
