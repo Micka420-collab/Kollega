@@ -8,6 +8,15 @@
 # Intégration continue : fmt → clippy → tests (dont graphe de dépendances,
 # isolation RLS et filet structurel sur base réelle) → image → SBOM →
 # signature cosign → publication.
+#
+# DURCISSEMENT (nuit du 28 au 29/07) : toutes les actions sont épinglées
+# PAR SHA — un tag mobile comme `@v4` est réécrivable par son mainteneur
+# (ou par qui prend son compte), et cette CI est le seul instrument de
+# preuve du projet : « la CI est verte » n'a de valeur que si l'on sait
+# QUEL code l'a rendue verte. La version lisible reste en commentaire à
+# côté, sans quoi on épinglerait sans savoir quoi. Les commandes cargo
+# passent en `--locked` : un Cargo.lock désynchronisé échoue ici au lieu
+# de n'apparaître qu'au build d'image, sur main seulement.
 name: ci
 
 on:
@@ -38,16 +47,16 @@ jobs:
       # Active le test d'isolation RLS (invariant 1) sur une base réelle.
       TEST_MIGRATE_DATABASE_URL: postgres://kollega_migrate:ci_migrate@localhost:5432/kollega
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           components: rustfmt, clippy
       - name: Format
         run: cargo fmt --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests (graphe de dépendances + isolation RLS sur base réelle)
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Différentiel encodage canonique Rust <-> Python
         # Deux implémentations écrites indépendamment depuis la spec ; toute
         # divergence est un défaut de SPÉCIFICATION à documenter, pas un bug
@@ -55,7 +64,7 @@ jobs:
         run: |
           # Chemin ABSOLU : cargo exécute les tests d'intégration avec la
           # crate (pas la racine du workspace) pour répertoire courant.
-          DIFF_VECTORS_DIR="$(pwd)/target/diff" cargo test -p kollega-audit --test diff_vectors
+          DIFF_VECTORS_DIR="$(pwd)/target/diff" cargo test -p kollega-audit --locked --test diff_vectors
           python3 tools/reference/canonical.py < target/diff/vectors.jsonl > target/diff/py.out
           python3 tools/reference/canonical.py --hashes < target/diff/hashes.jsonl > target/diff/py-hashes.out
           if ! diff -u target/diff/rust.out target/diff/py.out > target/diff/delta.txt; then
@@ -104,7 +113,7 @@ jobs:
       PGPASSWORD: ci_migrate
       PGDATABASE: kollega
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Aller-retour complet des migrations (up → down → up)
         # Tout échec est publié dans le RÉSUMÉ du job (page publique de la
         # run) : les journaux bruts exigent un jeton, le résumé non.
@@ -195,7 +204,7 @@ jobs:
       packages: write
       id-token: write # signature cosign sans clé (OIDC)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Nom d'image en minuscules (exigence des références OCI)
         env:
           OWNER: ${{ github.repository_owner }}
@@ -204,7 +213,7 @@ jobs:
         # docker/login-action écrit ~/.docker/config.json, lu par podman,
         # syft ET cosign — un podman login seul serait invisible pour cosign
         # (XDG_RUNTIME_DIR n'est pas défini sur les runners hébergés).
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -217,18 +226,18 @@ jobs:
           podman push --digestfile image.digest "$IMAGE:${{ github.sha }}"
           echo "IMAGE_REF=$IMAGE@$(cat image.digest)" >> "$GITHUB_ENV"
       - name: SBOM (syft)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           image: ${{ env.IMAGE_REF }}
           format: spdx-json
           output-file: sbom.spdx.json
       - name: Installer cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Signer l'image (sans clé, OIDC)
         run: cosign sign --yes "$IMAGE_REF"
       - name: Attester le SBOM
         run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom
           path: sbom.spdx.json

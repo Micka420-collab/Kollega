@@ -1,5 +1,35 @@
 # Questions des sessions autonomes
 
+## Nuit du 28 au 29/07 — objection de conception sur le bloc 3c
+
+**Le bloc 3c est inapplicable TEL QUEL à `ChainedEntry`, et pour une bonne
+raison.** La consigne — « l'attestation n'a pas de champ `hash` mais une
+méthode ; aucun chemin ne permet de construire un objet dont l'empreinte ne
+correspond pas à son contenu » — a été appliquée à `AuditContent` (fait :
+l'empreinte y est une méthode calculée). Appliquée à `ChainedEntry`, elle
+se retourne contre le produit : **une entrée relue d'une base corrompue
+DOIT pouvoir porter un hachage qui ment**, sinon `verify` n'a plus rien à
+dénoncer — la corruption devient inreprésentable au lieu d'être détectée.
+C'est exactement ce que fait `verify_org_chain` : il relit des empreintes
+brutes et les confronte au recalcul.
+
+**Option recommandée (non appliquée — c'est une décision d'API du
+domaine) : deux types au lieu d'un.**
+
+- `ChainedEntry` — PRODUITE par `OrgChain::append`, empreinte privée +
+  méthode : cohérente par construction, personne ne peut en forger une qui
+  mente. C'est ce que le domaine émet.
+- `StoredEntry` — RELUE du stockage (frontière `from_storage`, déjà gardée
+  textuellement) : empreinte brute, potentiellement menteuse. C'est ce que
+  `verify` prend en entrée, et c'est la seule forme qui rende la
+  vérification utile.
+
+Coût : refonte de `chain.rs`, `anchor.rs` et de leurs tests de mutation
+(~39 tests touchés). Gain : il devient impossible d'écrire dans la chaîne
+une entrée forgée par le code du domaine ; seule la frontière de stockage
+peut en représenter une, et uniquement pour la dénoncer. À trancher par
+toi — je ne refonds pas une API publique du domaine seul, de nuit.
+
 ## Session du 28/07/2026 — reprise de jour (remote actif, CI opérationnelle)
 
 Choix réversibles pris seul :
