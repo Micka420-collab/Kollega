@@ -16,10 +16,12 @@
 pub mod identity;
 pub mod ids;
 pub mod prompt;
+pub mod timestamp;
 
 pub use identity::{Email, EmailError, Role};
 pub use ids::{OrgId, TaskId, ToolCallId, UserId};
 pub use prompt::{AssemblyError, AssemblyLimits, CompiledDocument, CompiledPrompt};
+pub use timestamp::Timestamp;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

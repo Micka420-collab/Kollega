@@ -74,13 +74,16 @@ impl PolicyEngine for RulesPolicy<'_> {
     }
 }
 
-/// Microsecondes Unix de l'horloge de la périphérie — la machine reste sans
-/// horloge. Une horloge antérieure à 1970 donne 0 plutôt qu'une panique.
+/// Horodatage de l'horloge de la périphérie — la machine reste sans
+/// horloge. Toute construction passe par [`kollega_core::Timestamp`]
+/// (bloc 3b) : la précision est la microseconde PAR LE TYPE, l'écart entre
+/// ce qui est haché et ce qui fait l'aller-retour est inexprimable.
 fn now_micros() -> i64 {
-    std::time::SystemTime::now()
+    let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| i64::try_from(d.as_micros()).unwrap_or(i64::MAX))
-        .unwrap_or(0)
+        .map(|d| i128::try_from(d.as_nanos()).unwrap_or(i128::MAX))
+        .unwrap_or(0);
+    kollega_core::Timestamp::from_unix_nanos(nanos).as_micros()
 }
 
 /// Nom d'action d'un événement de machine — stable, c'est ce qui est haché.
