@@ -1,11 +1,22 @@
+# BASES ÉPINGLÉES PAR DIGEST (nuit du 28 au 29/07). Un tag comme
+# `bookworm-slim` désigne une image DIFFÉRENTE d'une semaine à l'autre : ce
+# qu'on signe avec cosign et ce que décrit le SBOM ne seraient alors pas
+# reproductibles, et « image signée + SBOM » perdrait son sens.
+#
+# CONTREPARTIE, à assumer explicitement : un digest épinglé ne reçoit PLUS
+# les correctifs de sécurité de sa base. Il FAUT donc le remonter
+# périodiquement — la procédure est dans `deploy/README-bases.md`. Un
+# digest jamais remonté est pire qu'un tag mobile : il fige une base
+# vulnérable en donnant l'illusion de la rigueur.
+
 # Étape de compilation
-FROM docker.io/library/rust:1-bookworm AS build
+FROM docker.io/library/rust:1-bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa AS build
 WORKDIR /src
 COPY . .
 RUN cargo build --release --locked -p kollega-cli
 
 # Image finale minimale
-FROM docker.io/library/debian:bookworm-slim
+FROM docker.io/library/debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
