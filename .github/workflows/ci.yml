@@ -1,4 +1,4 @@
-﻿# EXÉCUTÉ depuis le 28/07/2026 : run n°1 (30223145565) verte — isolation
+# EXÉCUTÉ depuis le 28/07/2026 : run n°1 (30223145565) verte — isolation
 # RLS sur base réelle, image, SBOM et signature cosign validés ; run n°2
 # (30223419721, branche jetable, politique RLS retirée) ROUGE — preuve que
 # le test d'isolation sait échouer. Le différentiel canonical.py tourne
