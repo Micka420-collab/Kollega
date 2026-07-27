@@ -71,10 +71,28 @@ fn all_dependency_names(manifest: &toml::Value) -> BTreeSet<String> {
     out
 }
 
+/// Concatène le texte de tous les `.rs` d'un répertoire, récursivement.
+fn append_rust_sources(dir: &std::path::Path, out: &mut String) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            append_rust_sources(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            if let Ok(text) = fs::read_to_string(&path) {
+                out.push_str(&text);
+            }
+        }
+    }
+}
+
 #[test]
 fn the_inventory_of_unwired_crates_is_exact() {
     let mut members: BTreeSet<String> = BTreeSet::new();
     let mut used: BTreeSet<String> = BTreeSet::new();
+    let mut dead_edges: Vec<String> = Vec::new();
 
     for entry in fs::read_dir(crates_dir()).expect("lecture de crates/") {
         let path = entry.expect("entrée lisible").path().join("Cargo.toml");
@@ -86,13 +104,37 @@ fn the_inventory_of_unwired_crates_is_exact() {
             .as_str()
             .expect("package.name présent")
             .to_owned();
+        // Une arête de manifeste ne prouve pas un USAGE. Sans cette
+        // vérification, il suffisait d'ajouter une ligne de dépendance
+        // sans écrire une seule ligne de code pour qu'une crate cesse
+        // d'être « orpheline » aux yeux de la garde — et le README aurait
+        // alors annoncé branché ce qui ne l'est pas. C'est précisément la
+        // fausse affirmation que cette garde existe pour rendre
+        // impossible.
+        let crate_dir = path.parent().expect("répertoire de la crate");
+        let mut crate_sources = String::new();
+        for sub in ["src", "tests", "benches", "examples"] {
+            append_rust_sources(&crate_dir.join(sub), &mut crate_sources);
+        }
+        for dep in all_dependency_names(&manifest)
+            .into_iter()
+            .filter(|d| d.starts_with("kollega-"))
+        {
+            if crate_sources.contains(&dep.replace('-', "_")) {
+                used.insert(dep);
+            } else {
+                dead_edges.push(format!("{name} déclare {dep} sans l'utiliser"));
+            }
+        }
         members.insert(name);
-        used.extend(
-            all_dependency_names(&manifest)
-                .into_iter()
-                .filter(|d| d.starts_with("kollega-")),
-        );
     }
+    assert!(
+        dead_edges.is_empty(),
+        "dépendance(s) DÉCLARÉE(S) mais jamais employée(s) : {dead_edges:?}. \
+         Une arête morte fait passer une crate pour branchée alors qu'aucun \
+         code ne l'atteint — exactement ce que l'inventaire ci-dessous doit \
+         empêcher d'affirmer."
+    );
     assert!(
         members.len() >= 10,
         "balayage suspect : {} crates trouvées",
