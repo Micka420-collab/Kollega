@@ -1,0 +1,218 @@
+++ psql --version
++ summary '## Réversibilité des migrations — psql (PostgreSQL) 16.14 (Ubuntu 16.14-1.pgdg24.04+1)'
++ printf '%s\n' '## Réversibilité des migrations — psql (PostgreSQL) 16.14 (Ubuntu 16.14-1.pgdg24.04+1)'
++ capture 'version serveur' psql -Atc 'SELECT version()' -o server-version.txt
++ local 'label=version serveur'
++ shift
++ psql -Atc 'SELECT version()' -o server-version.txt
+++ cat server-version.txt
++ summary 'serveur : PostgreSQL 16.14 (Debian 16.14-1.pgdg12+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit'
++ printf '%s\n' 'serveur : PostgreSQL 16.14 (Debian 16.14-1.pgdg12+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit'
++ snapshot vierge
++ capture 'pg_dump (vierge)' pg_dump --schema-only --no-owner --no-privileges -f vierge.schema.raw
++ local 'label=pg_dump (vierge)'
++ shift
++ pg_dump --schema-only --no-owner --no-privileges -f vierge.schema.raw
++ grep -v -E '^\\(un)?restrict ' vierge.schema.raw
++ capture 'roles (vierge)' psql -Atc 'SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE '\''kollega%'\'' ORDER BY rolname' -o vierge.roles
++ local 'label=roles (vierge)'
++ shift
++ psql -Atc 'SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE '\''kollega%'\'' ORDER BY rolname' -o vierge.roles
++ capture 'extensions (vierge)' psql -Atc 'SELECT extname FROM pg_extension ORDER BY extname' -o vierge.ext
++ local 'label=extensions (vierge)'
++ shift
++ psql -Atc 'SELECT extname FROM pg_extension ORDER BY extname' -o vierge.ext
++ capture 'acl (vierge)' psql -Atc 'SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('\''n'\'', n.nspowner))) a WHERE n.nspname = '\''public'\'' ORDER BY 1, 2' -o vierge.acl
++ local 'label=acl (vierge)'
++ shift
++ psql -Atc 'SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('\''n'\'', n.nspowner))) a WHERE n.nspname = '\''public'\'' ORDER BY 1, 2' -o vierge.acl
++ capture 'acl tables (vierge)' psql -Atc 'SELECT c.relname, a.grantee::regrole::text, a.privilege_type FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl, acldefault('\''r'\'', c.relowner))) a WHERE c.relnamespace = '\''public'\''::regnamespace AND c.relkind IN ('\''r'\'', '\''v'\'', '\''m'\'', '\''S'\'') ORDER BY 1, 2, 3' -o vierge.tacl
++ local 'label=acl tables (vierge)'
++ shift
++ psql -Atc 'SELECT c.relname, a.grantee::regrole::text, a.privilege_type FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl, acldefault('\''r'\'', c.relowner))) a WHERE c.relnamespace = '\''public'\''::regnamespace AND c.relkind IN ('\''r'\'', '\''v'\'', '\''m'\'', '\''S'\'') ORDER BY 1, 2, 3' -o vierge.tacl
++ apply
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0001_extensions_roles.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0001_extensions_roles.up.sql
++ local 'label=up: migrations/0001_extensions_roles.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0001_extensions_roles.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0002_organizations_users.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0002_organizations_users.up.sql
++ local 'label=up: migrations/0002_organizations_users.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0002_organizations_users.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0003_tasks_audit_credits.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0003_tasks_audit_credits.up.sql
++ local 'label=up: migrations/0003_tasks_audit_credits.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0003_tasks_audit_credits.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0004_tool_call_effects.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0004_tool_call_effects.up.sql
++ local 'label=up: migrations/0004_tool_call_effects.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0004_tool_call_effects.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0005_one_attestation_per_call_action.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0005_one_attestation_per_call_action.up.sql
++ local 'label=up: migrations/0005_one_attestation_per_call_action.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0005_one_attestation_per_call_action.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0006_revoke_physical_deletion.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0006_revoke_physical_deletion.up.sql
++ local 'label=up: migrations/0006_revoke_physical_deletion.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0006_revoke_physical_deletion.up.sql
++ snapshot apres-up-1
++ capture 'pg_dump (apres-up-1)' pg_dump --schema-only --no-owner --no-privileges -f apres-up-1.schema.raw
++ local 'label=pg_dump (apres-up-1)'
++ shift
++ pg_dump --schema-only --no-owner --no-privileges -f apres-up-1.schema.raw
++ grep -v -E '^\\(un)?restrict ' apres-up-1.schema.raw
++ capture 'roles (apres-up-1)' psql -Atc 'SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE '\''kollega%'\'' ORDER BY rolname' -o apres-up-1.roles
++ local 'label=roles (apres-up-1)'
++ shift
++ psql -Atc 'SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE '\''kollega%'\'' ORDER BY rolname' -o apres-up-1.roles
++ capture 'extensions (apres-up-1)' psql -Atc 'SELECT extname FROM pg_extension ORDER BY extname' -o apres-up-1.ext
++ local 'label=extensions (apres-up-1)'
++ shift
++ psql -Atc 'SELECT extname FROM pg_extension ORDER BY extname' -o apres-up-1.ext
++ capture 'acl (apres-up-1)' psql -Atc 'SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('\''n'\'', n.nspowner))) a WHERE n.nspname = '\''public'\'' ORDER BY 1, 2' -o apres-up-1.acl
++ local 'label=acl (apres-up-1)'
++ shift
++ psql -Atc 'SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('\''n'\'', n.nspowner))) a WHERE n.nspname = '\''public'\'' ORDER BY 1, 2' -o apres-up-1.acl
++ capture 'acl tables (apres-up-1)' psql -Atc 'SELECT c.relname, a.grantee::regrole::text, a.privilege_type FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl, acldefault('\''r'\'', c.relowner))) a WHERE c.relnamespace = '\''public'\''::regnamespace AND c.relkind IN ('\''r'\'', '\''v'\'', '\''m'\'', '\''S'\'') ORDER BY 1, 2, 3' -o apres-up-1.tacl
++ local 'label=acl tables (apres-up-1)'
++ shift
++ psql -Atc 'SELECT c.relname, a.grantee::regrole::text, a.privilege_type FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl, acldefault('\''r'\'', c.relowner))) a WHERE c.relnamespace = '\''public'\''::regnamespace AND c.relkind IN ('\''r'\'', '\''v'\'', '\''m'\'', '\''S'\'') ORDER BY 1, 2, 3' -o apres-up-1.tacl
++ revert
+++ ls -r migrations/0001_extensions_roles.down.sql migrations/0002_organizations_users.down.sql migrations/0003_tasks_audit_credits.down.sql migrations/0004_tool_call_effects.down.sql migrations/0005_one_attestation_per_call_action.down.sql migrations/0006_revoke_physical_deletion.down.sql
++ for f in $(ls -r migrations/*.down.sql)
++ capture 'down: migrations/0006_revoke_physical_deletion.down.sql' psql -v ON_ERROR_STOP=1 -f migrations/0006_revoke_physical_deletion.down.sql
++ local 'label=down: migrations/0006_revoke_physical_deletion.down.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0006_revoke_physical_deletion.down.sql
++ for f in $(ls -r migrations/*.down.sql)
++ capture 'down: migrations/0005_one_attestation_per_call_action.down.sql' psql -v ON_ERROR_STOP=1 -f migrations/0005_one_attestation_per_call_action.down.sql
++ local 'label=down: migrations/0005_one_attestation_per_call_action.down.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0005_one_attestation_per_call_action.down.sql
++ for f in $(ls -r migrations/*.down.sql)
++ capture 'down: migrations/0004_tool_call_effects.down.sql' psql -v ON_ERROR_STOP=1 -f migrations/0004_tool_call_effects.down.sql
++ local 'label=down: migrations/0004_tool_call_effects.down.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0004_tool_call_effects.down.sql
++ for f in $(ls -r migrations/*.down.sql)
++ capture 'down: migrations/0003_tasks_audit_credits.down.sql' psql -v ON_ERROR_STOP=1 -f migrations/0003_tasks_audit_credits.down.sql
++ local 'label=down: migrations/0003_tasks_audit_credits.down.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0003_tasks_audit_credits.down.sql
++ for f in $(ls -r migrations/*.down.sql)
++ capture 'down: migrations/0002_organizations_users.down.sql' psql -v ON_ERROR_STOP=1 -f migrations/0002_organizations_users.down.sql
++ local 'label=down: migrations/0002_organizations_users.down.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0002_organizations_users.down.sql
++ for f in $(ls -r migrations/*.down.sql)
++ capture 'down: migrations/0001_extensions_roles.down.sql' psql -v ON_ERROR_STOP=1 -f migrations/0001_extensions_roles.down.sql
++ local 'label=down: migrations/0001_extensions_roles.down.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0001_extensions_roles.down.sql
++ snapshot apres-down
++ capture 'pg_dump (apres-down)' pg_dump --schema-only --no-owner --no-privileges -f apres-down.schema.raw
++ local 'label=pg_dump (apres-down)'
++ shift
++ pg_dump --schema-only --no-owner --no-privileges -f apres-down.schema.raw
++ grep -v -E '^\\(un)?restrict ' apres-down.schema.raw
++ capture 'roles (apres-down)' psql -Atc 'SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE '\''kollega%'\'' ORDER BY rolname' -o apres-down.roles
++ local 'label=roles (apres-down)'
++ shift
++ psql -Atc 'SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE '\''kollega%'\'' ORDER BY rolname' -o apres-down.roles
++ capture 'extensions (apres-down)' psql -Atc 'SELECT extname FROM pg_extension ORDER BY extname' -o apres-down.ext
++ local 'label=extensions (apres-down)'
++ shift
++ psql -Atc 'SELECT extname FROM pg_extension ORDER BY extname' -o apres-down.ext
++ capture 'acl (apres-down)' psql -Atc 'SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('\''n'\'', n.nspowner))) a WHERE n.nspname = '\''public'\'' ORDER BY 1, 2' -o apres-down.acl
++ local 'label=acl (apres-down)'
++ shift
++ psql -Atc 'SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('\''n'\'', n.nspowner))) a WHERE n.nspname = '\''public'\'' ORDER BY 1, 2' -o apres-down.acl
++ capture 'acl tables (apres-down)' psql -Atc 'SELECT c.relname, a.grantee::regrole::text, a.privilege_type FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl, acldefault('\''r'\'', c.relowner))) a WHERE c.relnamespace = '\''public'\''::regnamespace AND c.relkind IN ('\''r'\'', '\''v'\'', '\''m'\'', '\''S'\'') ORDER BY 1, 2, 3' -o apres-down.tacl
++ local 'label=acl tables (apres-down)'
++ shift
++ psql -Atc 'SELECT c.relname, a.grantee::regrole::text, a.privilege_type FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl, acldefault('\''r'\'', c.relowner))) a WHERE c.relnamespace = '\''public'\''::regnamespace AND c.relkind IN ('\''r'\'', '\''v'\'', '\''m'\'', '\''S'\'') ORDER BY 1, 2, 3' -o apres-down.tacl
++ fail=0
++ for part in schema roles ext acl tacl
++ diff vierge.schema apres-down.schema
++ for part in schema roles ext acl tacl
++ diff vierge.roles apres-down.roles
++ for part in schema roles ext acl tacl
++ diff vierge.ext apres-down.ext
++ for part in schema roles ext acl tacl
++ diff vierge.acl apres-down.acl
++ for part in schema roles ext acl tacl
++ diff vierge.tacl apres-down.tacl
++ apply
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0001_extensions_roles.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0001_extensions_roles.up.sql
++ local 'label=up: migrations/0001_extensions_roles.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0001_extensions_roles.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0002_organizations_users.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0002_organizations_users.up.sql
++ local 'label=up: migrations/0002_organizations_users.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0002_organizations_users.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0003_tasks_audit_credits.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0003_tasks_audit_credits.up.sql
++ local 'label=up: migrations/0003_tasks_audit_credits.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0003_tasks_audit_credits.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0004_tool_call_effects.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0004_tool_call_effects.up.sql
++ local 'label=up: migrations/0004_tool_call_effects.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0004_tool_call_effects.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0005_one_attestation_per_call_action.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0005_one_attestation_per_call_action.up.sql
++ local 'label=up: migrations/0005_one_attestation_per_call_action.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0005_one_attestation_per_call_action.up.sql
++ for f in migrations/*.up.sql
++ capture 'up: migrations/0006_revoke_physical_deletion.up.sql' psql -v ON_ERROR_STOP=1 -f migrations/0006_revoke_physical_deletion.up.sql
++ local 'label=up: migrations/0006_revoke_physical_deletion.up.sql'
++ shift
++ psql -v ON_ERROR_STOP=1 -f migrations/0006_revoke_physical_deletion.up.sql
++ snapshot apres-up-2
++ capture 'pg_dump (apres-up-2)' pg_dump --schema-only --no-owner --no-privileges -f apres-up-2.schema.raw
++ local 'label=pg_dump (apres-up-2)'
++ shift
++ pg_dump --schema-only --no-owner --no-privileges -f apres-up-2.schema.raw
++ grep -v -E '^\\(un)?restrict ' apres-up-2.schema.raw
++ capture 'roles (apres-up-2)' psql -Atc 'SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE '\''kollega%'\'' ORDER BY rolname' -o apres-up-2.roles
++ local 'label=roles (apres-up-2)'
++ shift
++ psql -Atc 'SELECT rolname, rolcanlogin, rolbypassrls FROM pg_roles WHERE rolname LIKE '\''kollega%'\'' ORDER BY rolname' -o apres-up-2.roles
++ capture 'extensions (apres-up-2)' psql -Atc 'SELECT extname FROM pg_extension ORDER BY extname' -o apres-up-2.ext
++ local 'label=extensions (apres-up-2)'
++ shift
++ psql -Atc 'SELECT extname FROM pg_extension ORDER BY extname' -o apres-up-2.ext
++ capture 'acl (apres-up-2)' psql -Atc 'SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('\''n'\'', n.nspowner))) a WHERE n.nspname = '\''public'\'' ORDER BY 1, 2' -o apres-up-2.acl
++ local 'label=acl (apres-up-2)'
++ shift
++ psql -Atc 'SELECT a.grantee::regrole::text, a.privilege_type FROM pg_namespace n, LATERAL aclexplode(COALESCE(n.nspacl, acldefault('\''n'\'', n.nspowner))) a WHERE n.nspname = '\''public'\'' ORDER BY 1, 2' -o apres-up-2.acl
++ capture 'acl tables (apres-up-2)' psql -Atc 'SELECT c.relname, a.grantee::regrole::text, a.privilege_type FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl, acldefault('\''r'\'', c.relowner))) a WHERE c.relnamespace = '\''public'\''::regnamespace AND c.relkind IN ('\''r'\'', '\''v'\'', '\''m'\'', '\''S'\'') ORDER BY 1, 2, 3' -o apres-up-2.tacl
++ local 'label=acl tables (apres-up-2)'
++ shift
++ psql -Atc 'SELECT c.relname, a.grantee::regrole::text, a.privilege_type FROM pg_class c, LATERAL aclexplode(COALESCE(c.relacl, acldefault('\''r'\'', c.relowner))) a WHERE c.relnamespace = '\''public'\''::regnamespace AND c.relkind IN ('\''r'\'', '\''v'\'', '\''m'\'', '\''S'\'') ORDER BY 1, 2, 3' -o apres-up-2.tacl
++ for part in schema roles ext acl tacl
++ diff apres-up-1.schema apres-up-2.schema
++ for part in schema roles ext acl tacl
++ diff apres-up-1.roles apres-up-2.roles
++ for part in schema roles ext acl tacl
++ diff apres-up-1.ext apres-up-2.ext
++ for part in schema roles ext acl tacl
++ diff apres-up-1.acl apres-up-2.acl
++ for part in schema roles ext acl tacl
++ diff apres-up-1.tacl apres-up-2.tacl
++ '[' 0 -ne 0 ']'
++ summary 'réversibilité prouvée : down rend le vierge, re-up reproduit l'\''état'
++ printf '%s\n' 'réversibilité prouvée : down rend le vierge, re-up reproduit l'\''état'
++ echo 'réversibilité prouvée'
+réversibilité prouvée

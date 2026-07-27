@@ -1,0 +1,6 @@
+-|USAGE
+kollega_app|USAGE
+kollega_migrate|CREATE
+kollega_migrate|USAGE
+pg_database_owner|CREATE
+pg_database_owner|USAGE
