@@ -119,9 +119,12 @@ la cause du `25P02` et du `XX000` en une lecture chacun.
 
 ## 7. Inquiétudes
 
-- **`ToolRunner` reste un trait public** : rien n'empêche techniquement un
-  appel hors de la boucle. Un type témoin délivré par le moteur fermerait
-  ce dernier chemin de l'invariant 2.
+- ~~`ToolRunner` reste un trait public.~~ **FERMÉ** : `run` exige un
+  `ExecutionPermit` aux champs privés, que seule la boucle peut délivrer
+  après décision favorable. Exécuter un outil sans passer par la politique
+  ne compile plus — vérifié par sabotage (champs rendus publics → le
+  doctest échoue). L'invariant 2 est désormais porté par le type de bout
+  en bout.
 - **L'effacement logique n'est écrit nulle part** : `deleted_at` existe
   dans le schéma, aucun code ne le pose. L'invariant 12 est prouvé du côté
   « on ne supprime pas », pas du côté « on efface proprement ».

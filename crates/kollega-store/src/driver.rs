@@ -34,7 +34,8 @@ use kollega_audit::CanonicalValue;
 use kollega_core::{Cents, OrgId, TaskStatus, ToolCallId};
 use kollega_policy::ToolRule;
 use kollega_runtime::machine::{
-    drive, ApprovalDecision, AuditEvent, ModelProvider, TaskState, TaskStateEnvelope, ToolRunner,
+    drive, ApprovalDecision, AuditEvent, ExecutionPermit, ModelProvider, TaskState,
+    TaskStateEnvelope, ToolRunner,
 };
 use sha2::{Digest as _, Sha256};
 use sqlx::{Postgres, Row as _, Transaction};
@@ -92,17 +93,18 @@ struct IdempotentTools<'a> {
 }
 
 impl ToolRunner for IdempotentTools<'_> {
-    fn run(&self, tool: &str, iteration: u32) -> String {
+    fn run(&self, permit: &ExecutionPermit) -> String {
+        let iteration = permit.iteration();
         if let Some(recorded) = self.known.get(&iteration) {
             // L'effet a DÉJÀ eu lieu dans le monde réel : on rend son
             // résultat, on ne le refait pas. C'est ici que le second mail
             // n'est pas envoyé.
             return recorded.clone();
         }
-        let result = self.inner.run(tool, iteration);
+        let result = self.inner.run(permit);
         self.performed
             .borrow_mut()
-            .push((iteration, tool.to_owned(), result.clone()));
+            .push((iteration, permit.tool().to_owned(), result.clone()));
         result
     }
 }

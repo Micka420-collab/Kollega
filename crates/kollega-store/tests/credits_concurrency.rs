@@ -16,7 +16,7 @@
 
 use kollega_core::{Cents, TaskStatus};
 use kollega_policy::ToolRule;
-use kollega_runtime::machine::{ModelProvider, PlannedAction, ToolRunner};
+use kollega_runtime::machine::{ExecutionPermit, ModelProvider, PlannedAction, ToolRunner};
 use kollega_store::driver;
 use sqlx::{Connection, PgConnection, Row as _};
 use uuid::Uuid;
@@ -52,7 +52,7 @@ impl ModelProvider for CostlyConclusion {
 struct NoTools;
 
 impl ToolRunner for NoTools {
-    fn run(&self, _tool: &str, _iteration: u32) -> String {
+    fn run(&self, _permit: &ExecutionPermit) -> String {
         unreachable!("ce scénario n'appelle aucun outil")
     }
 }

@@ -10,7 +10,9 @@
 
 use kollega_core::{Cents, TaskStatus};
 use kollega_policy::{Bound, ToolCallRequest, ToolRule};
-use kollega_runtime::machine::{ApprovalDecision, ModelProvider, PlannedAction, ToolRunner};
+use kollega_runtime::machine::{
+    ApprovalDecision, ExecutionPermit, ModelProvider, PlannedAction, ToolRunner,
+};
 use kollega_store::driver;
 use sqlx::{Connection, PgConnection, Row as _};
 use uuid::Uuid;
@@ -58,10 +60,14 @@ impl FixedTools {
 }
 
 impl ToolRunner for FixedTools {
-    fn run(&self, tool: &str, iteration: u32) -> String {
+    fn run(&self, permit: &ExecutionPermit) -> String {
         self.executions
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        format!("exécuté : {tool} (itération {iteration})")
+        format!(
+            "exécuté : {} (itération {})",
+            permit.tool(),
+            permit.iteration()
+        )
     }
 }
 

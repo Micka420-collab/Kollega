@@ -79,19 +79,57 @@ pub trait ModelProvider {
 // d'intermédiaire à implémenter de travers, et aucune façon d'exécuter un
 // outil sans que le vrai moteur ait vu le vrai appel.
 
-/// Exécute un outil autorisé (trait, pour découpler des vrais outils).
+/// PERMIS d'exécution — la preuve qu'une décision favorable a eu lieu.
+///
+/// Son champ privé le rend inconstructible hors de ce module : seule la
+/// boucle, APRÈS une décision du moteur de politiques (ou une validation
+/// humaine), peut en produire un. Comme [`ToolRunner::run`] en exige un,
+/// **exécuter un outil sans être passé par la politique ne compile pas** —
+/// l'invariant 2 cesse d'être une convention défendue par la revue.
+///
+/// Il porte aussi l'identité de l'appel : c'est ce qui rend l'exécuteur
+/// idempotent (voir `derive_tool_call_id` côté persistance). Un exécuteur
+/// qui ignore QUEL appel il exécute ne peut pas reconnaître un effet déjà
+/// réalisé — la v1 du trait, qui ne recevait que le nom de l'outil, rendait
+/// l'idempotence inexprimable.
+///
+/// Fabriquer un permis hors de la boucle ne COMPILE PAS :
+///
+/// ```compile_fail
+/// use kollega_runtime::machine::ExecutionPermit;
+/// // Les champs sont privés : aucune façon de s'auto-délivrer
+/// // l'autorisation d'exécuter un outil.
+/// let faux = ExecutionPermit { tool: "mail.send".to_owned(), iteration: 0 };
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionPermit {
+    tool: String,
+    iteration: u32,
+}
+
+impl ExecutionPermit {
+    /// L'outil autorisé.
+    #[must_use]
+    pub fn tool(&self) -> &str {
+        &self.tool
+    }
+
+    /// L'itération, qui identifie l'appel avec le `task_id`.
+    #[must_use]
+    pub fn iteration(&self) -> u32 {
+        self.iteration
+    }
+}
+
+/// Exécute un outil AUTORISÉ (trait, pour découpler des vrais outils).
 pub trait ToolRunner {
-    /// Exécute l'outil de l'itération `iteration` ; retourne une trace de
+    /// Exécute l'appel décrit par le permis ; retourne une trace de
     /// résultat (opaque ici).
     ///
-    /// L'ITÉRATION EST DANS LA SIGNATURE, et ce n'est pas décoratif : un
-    /// exécuteur ne peut être IDEMPOTENT que s'il sait QUEL appel il
-    /// exécute. Avec `(task_id, iteration)` — dérivable, donc identique
-    /// après un rejeu — la périphérie peut reconnaître un effet déjà
-    /// réalisé au lieu de l'accomplir deux fois (double envoi de mail).
-    /// La v1 du trait ne recevait que le nom de l'outil : elle rendait
-    /// l'idempotence inexprimable.
-    fn run(&self, tool: &str, iteration: u32) -> String;
+    /// Le permis n'est pas décoratif : il ne peut pas être fabriqué hors de
+    /// ce module, donc sa présence PROUVE qu'une décision de politique a
+    /// précédé l'exécution.
+    fn run(&self, permit: &ExecutionPermit) -> String;
 }
 
 /// Événement d'audit émis par la boucle (invariant 3 de CLAUDE.md).
@@ -370,7 +408,10 @@ pub fn drive(
                 // L'itération vient du PENDING PERSISTÉ, pas du compteur
                 // courant : après une reprise, c'est ce qui redonne à
                 // l'appel la même identité qu'avant l'interruption.
-                tools.run(&pending.request.tool_name, pending.iteration);
+                tools.run(&ExecutionPermit {
+                    tool: pending.request.tool_name.clone(),
+                    iteration: pending.iteration,
+                });
                 state.audit.push(AuditEvent::ToolCallCompleted {
                     tool: pending.request.tool_name,
                     iteration: pending.iteration,
@@ -443,7 +484,10 @@ pub fn drive(
                             finish(state, state.status);
                             return;
                         }
-                        tools.run(&tool, iteration);
+                        tools.run(&ExecutionPermit {
+                            tool: tool.clone(),
+                            iteration,
+                        });
                         state.audit.push(AuditEvent::ToolCallCompleted {
                             tool,
                             iteration,
@@ -495,11 +539,15 @@ mod tests {
         executed: std::cell::RefCell<Vec<(String, u32)>>,
     }
     impl ToolRunner for EchoTools {
-        fn run(&self, tool: &str, iteration: u32) -> String {
+        fn run(&self, permit: &ExecutionPermit) -> String {
             self.executed
                 .borrow_mut()
-                .push((tool.to_owned(), iteration));
-            format!("résultat de {tool} (itération {iteration})")
+                .push((permit.tool().to_owned(), permit.iteration()));
+            format!(
+                "résultat de {} (itération {})",
+                permit.tool(),
+                permit.iteration()
+            )
         }
     }
 
