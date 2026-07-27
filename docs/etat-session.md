@@ -230,6 +230,23 @@
 >     Le test refuse cette amélioration-là, et vérifie en outre que la
 >     tentative de B n'a pas altéré la tâche de A.
 >
+> 26. **Quatre variantes d'erreur n'étaient produites par aucun test.**
+>     La plus lourde portait une propriété que la migration 0004 affirme :
+>     « un rejeu dont le contenu a été purgé échoue explicitement — il ne
+>     ré-exécute surtout pas ». L'idempotence repose sur DEUX tables :
+>     `tool_call_effects` retient qu'un appel a eu lieu, `audit_content`
+>     ce qu'il a rendu ; la purge RGPD efface le second, jamais le
+>     premier. Un rejeu n'a donc que deux conduites — refaire l'appel,
+>     donc renvoyer un mail au client d'une organisation qui vient
+>     d'exercer son droit à l'effacement, ou refuser en nommant la cause.
+>     Le code choisit la seconde ; rien ne l'y tenait. Le test vérifie
+>     séparément que le refus est bien `CorruptState`, qu'il **nomme** la
+>     purge, et que le compteur d'envois réels reste à un.
+>     Ajoutée aussi `BudgetError::NegativeState` — défense de dernier
+>     recours jamais vue se déclencher. **Restent non produites** :
+>     `ChainConflict` (il faudrait épuiser les trois rejeux de hauteur) et
+>     `Accounting` (simple report d'une erreur de budget).
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
