@@ -173,9 +173,22 @@ async fn tenant_isolation_holds_and_the_test_is_sensitive() {
     let out_of_context = sqlx::query("SELECT count(*) FROM users")
         .fetch_one(&mut plain)
         .await;
+    // On vérifie POURQUOI elle échoue, pas seulement qu'elle échoue : un
+    // simple `is_err()` serait vert sur une connexion coupée, une faute de
+    // frappe SQL ou un défaut de privilège — c'est-à-dire sans rien dire de
+    // la RLS. La cause attendue est nommée : le réglage d'organisation
+    // n'existe pas dans cette session, et `current_setting` sans `missing_ok`
+    // le refuse (ADR-0002, point 3 : fermé par défaut, jamais silencieux).
+    let erreur = out_of_context.expect_err(
+        "sans app.current_org, la requête doit échouer, pas retourner des lignes",
+    );
+    let base = erreur
+        .as_database_error()
+        .expect("l'échec doit venir de la BASE, pas du transport");
     assert!(
-        out_of_context.is_err(),
-        "sans app.current_org, la requête doit échouer, pas retourner des lignes"
+        base.message().contains("app.current_org"),
+        "l'échec doit nommer le réglage manquant — sinon il pourrait venir \
+         de tout autre chose et ce test ne prouverait rien : {base}"
     );
 
     // 5. Sensibilité : si la RLS tombe, la fuite doit devenir visible —
