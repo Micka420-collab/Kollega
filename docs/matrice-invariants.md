@@ -19,7 +19,7 @@ Aucune conclusion flatteuse : un invariant dont le test existe mais n'a
 | 9 | Procédure métier validée avant mémoire (`validated_by`) | — | — | **NON — AUCUN** | Périmètre M5 (mémoire). Non commencé. |
 | 10 | Sortie porte la mention d'origine IA | — | — | **NON — AUCUN** | Périmètre M6 (interface). Non commencé. |
 | 11 | `kollega-core` sans entrée-sortie | `dependency_graph_is_respected` | `kollega-cli/tests/dependency_graph.rs` | Oui | **Couvert.** Liste blanche appliquée à toutes les sections (dependencies, dev, build, `[target.*]`). |
-| 12 | Aucune suppression physique (effacement logique + purge tracée) | — | Schéma : `deleted_at` sur organizations/users (seules tables existantes) | **NON — AUCUN test de code** | Le schéma porte `deleted_at` ; aucune logique de purge ni de garde contre le `DELETE` physique n'est écrite — et `GRANT DELETE` est accordé à `kollega_app` (RGPD, jalon ultérieur). |
+| 12 | Aucune suppression physique (effacement logique + purge tracée) | **`the_application_role_cannot_physically_delete_anything_but_purgeable_content`** | `kollega-store/tests/no_physical_deletion.rs`, `migrations/0006` | **OUI — CI, 29/07/2026** | **Porté par le RÔLE.** La migration 0006 retire le dernier `GRANT DELETE` (il subsistait sur `organizations` et `users`, en contradiction avec la constitution). Le test tente une suppression sur les SIX tables tenant et échoue partout. Seule exception, nommée : `audit_content`, purgeable — c'est la purge RGPD, tracée par une attestation, et la chaîne reste vérifiable après. **Restent à écrire** : l'effacement logique lui-même (`deleted_at` n'est posé par aucun code) et l'export RGPD par organisation. |
 | 13 | Toute migration réversible | Job CI `reversibilite` : up → down → diff avec l'état VIERGE → re-up → diff (schéma pg_dump normalisé, rôles, extensions, ACL effective), cluster dédié | `.github/workflows/ci.yml` | **OUI — CI, 28/07/2026, run n°15** | **Prouvé** : le down rend l'état vierge exact, le re-up reproduit l'état à l'identique. Cinq passages rouges d'abord — un réglage réel (comparer l'ACL EFFECTIVE : un `nspacl` matérialisé après GRANT+REVOKE n'est pas le texte du NULL initial) et un faux positif d'outillage (jeton aléatoire `\restrict` de pg_dump ≥ 18) ; dossier archivé sur la branche `ci-diagnostic`. Réserve : prouvé via psql — l'outillage applicatif (`sqlx::migrate!`) n'a toujours aucun chemin de descente. |
 
 ## Où vit chaque invariant (bloc 4 — colonne détachée pour lisibilité)
@@ -42,7 +42,7 @@ visible (ADR-0007).
 | 9 | ***prose seulement*** (M5 non commencé) |
 | 10 | ***prose seulement*** (M6 non commencé) |
 | 11 | **test** (garde du graphe de dépendances, toutes sections) |
-| 12 | **contrainte de schéma** (pas de GRANT DELETE sur `tasks` ni `audit_chain` ; DELETE sur le seul contenu purgeable) + purge nommée `purge_org` — la purge TRACÉE reste partielle |
+| 12 | **contrainte de schéma** (aucun GRANT DELETE sur les six tables tenant depuis 0006 ; seul le contenu purgeable en garde un) + **test** — restent en *prose seulement* : l'effacement logique et l'export RGPD |
 | 13 | **test** (job CI `reversibilite` : down rend le vierge, re-up reproduit) |
 
 ## Lecture d'ensemble — sans complaisance
@@ -62,7 +62,10 @@ visible (ADR-0007).
 - **Prouvé en partie** : **5** — le débit atomique l'est (concurrence
   réelle testée) ; « vérifié AVANT l'appel de modèle » ne l'est pas, et
   trois options sont posées dans `questions-nuit.md` sans être tranchées.
-- **Aucun test aujourd'hui** : 8, 9, 10, 12 (jalons non commencés).
+- **12 promu aussi** : aucune suppression physique n'est possible par le
+  rôle applicatif, sur aucune table tenant (migration 0006 + test).
+  Restent en prose : l'effacement logique et l'export RGPD.
+- **Aucun test aujourd'hui** : 8, 9, 10 (jalons M2, M5, M6 non commencés).
 
 Les deux dettes de preuve du socle (1 et 13) sont soldées par une CI qui a
 montré qu'elle sait passer au rouge — dans les deux cas c'est le rouge qui
