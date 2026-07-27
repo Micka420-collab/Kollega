@@ -21,7 +21,14 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # `worktree-**` ajoutée dans la nuit du 29 au 30/07 : les tests qui
+    # exigent PostgreSQL ne s'exécutent NULLE PART ailleurs qu'ici (le poste
+    # de travail n'a ni base ni pgvector), et une branche de travail ne
+    # déclenchait la CI qu'en ouvrant une pull request — impossible sans
+    # l'outil `gh`, absent du poste. Une preuve qu'on ne peut pas faire
+    # tourner n'est pas une preuve. Outillage réversible : à retirer le jour
+    # où les branches de travail passent par une pull request.
+    branches: [main, "worktree-**"]
   pull_request:
 
 jobs:
