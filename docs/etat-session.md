@@ -128,6 +128,31 @@
 >     et l'unicité d'email dans ses DEUX moitiés, doublon refusé dans une
 >     organisation, même email accepté dans une autre.
 >
+> 17. **Suite de la relecture documentaire.** `encodage-canonique.md` se
+>     vérifie **intégralement** : ordre des champs, préfixe de 32 octets
+>     zéro, cinq vecteurs de référence, et le « 14 014 » du README
+>     recalculé exactement (12 014 encodages + 2 000 empreintes).
+>     `methode-de-travail.md` s'annonce lui-même comme des hypothèses non
+>     confrontées — rien à vérifier contre le code, et son seul renvoi
+>     (l'impact schéma au backlog) est exact. **ADR-0002 point 3** promet
+>     qu'une requête hors contexte ÉCHOUE ; le test existait mais se
+>     contentait d'un `is_err()`, vert sur une connexion coupée ou une
+>     faute de frappe. Il nomme désormais la cause. Deux contraintes de
+>     plus éprouvées : le « deuxième filet » de l'idempotence (unicité par
+>     tâche et itération, que les tests existants ne pouvaient PAS
+>     atteindre puisqu'ils passent tous par la dérivation) et la clé
+>     étrangère des effets vers les tâches.
+> 18. **Deux erreurs de ma part, rattrapées — trois runs rouges dans
+>     l'historique (91, 92, 93).** (a) J'ai poussé un fichier non formaté :
+>     ma chaîne PowerShell enchaînait par `;`, qui n'interrompt pas sur
+>     échec, et le `git add` s'est exécuté malgré `fmt --check` rouge. La
+>     règle du dépôt est explicite et je l'ai enfreinte ; les commandes
+>     s'arrêtent désormais au premier rouge. (b) Le nouveau test de
+>     contraintes échouait sur base réelle : `create_task` lit le solde, et
+>     mes sections précédentes font délibérément avorter leurs transactions
+>     — aucune ligne de crédit ne subsistait. Corrigé, CI n°94 verte. Les
+>     rouges restent dans l'historique plutôt que réécrits.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
