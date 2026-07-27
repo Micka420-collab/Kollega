@@ -55,6 +55,7 @@ fn every_migration_is_reversible_or_says_why_not() {
     let mut ups: BTreeMap<String, (String, PathBuf)> = BTreeMap::new();
     let mut downs: BTreeSet<String> = BTreeSet::new();
     let mut duplicates: Vec<String> = Vec::new();
+    let mut unrecognized: Vec<String> = Vec::new();
 
     for entry in fs::read_dir(&dir).expect("lecture de migrations/") {
         let path = entry.expect("entrée lisible").path();
@@ -67,6 +68,14 @@ fn every_migration_is_reversible_or_says_why_not() {
             }
         } else if let Some((version, _)) = split_stem(file_name, ".down.sql") {
             downs.insert(version);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("sql") {
+            // Un `.sql` que cette garde ne sait pas classer était jusqu'ici
+            // IGNORÉ sans un mot : il suffisait de nommer une migration
+            // `0008_x.sql` ou `0007.up.sql` pour qu'elle échappe à
+            // l'exigence de descente. Or `sqlx` sait appliquer la première
+            // forme — la migration serait donc jouée en production sans
+            // aucun retour arrière, pendant que la garde se tairait.
+            unrecognized.push(file_name.to_owned());
         }
     }
 
@@ -75,6 +84,15 @@ fn every_migration_is_reversible_or_says_why_not() {
         "balayage suspect : {} migrations trouvées dans {}",
         ups.len(),
         dir.display()
+    );
+    assert!(
+        unrecognized.is_empty(),
+        "fichier(s) .sql dans migrations/ que cette garde ne sait pas \
+         classer : {unrecognized:?}. Le nom attendu est \
+         `NNNN_description.up.sql` ou `.down.sql`. Les ignorer en silence \
+         ouvrirait une porte de service à l'invariant 13 : une migration \
+         nommée autrement échapperait à l'exigence de descente tout en \
+         restant applicable."
     );
     assert!(
         duplicates.is_empty(),
