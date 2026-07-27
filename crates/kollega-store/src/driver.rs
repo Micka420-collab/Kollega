@@ -119,10 +119,36 @@ impl ToolRunner for IdempotentTools<'_> {
 /// (bloc 3b) : la précision est la microseconde PAR LE TYPE, l'écart entre
 /// ce qui est haché et ce qui fait l'aller-retour est inexprimable.
 fn now_micros() -> i64 {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| i128::try_from(d.as_nanos()).unwrap_or(i128::MAX))
-        .unwrap_or(0);
+    micros_from_epoch(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|before| before.duration()),
+    )
+}
+
+/// Partie PURE de l'horodatage : l'écart à l'époque, signé.
+///
+/// La version précédente écrivait `.unwrap_or(0)` : une horloge ANTÉRIEURE
+/// à l'époque Unix — machine virtuelle dont l'horloge matérielle est
+/// repartie de zéro, conteneur sans synchronisation — produisait un
+/// horodatage d'audit valant 0, c'est-à-dire le 1ᵉʳ janvier 1970. La chaîne
+/// restait cohérente et scellait une date FAUSSE, sans que rien ne le
+/// signale.
+///
+/// Or l'erreur de `duration_since` porte l'écart : il suffit de le reprendre
+/// en négatif. `Timestamp` sait représenter l'avant-époque (troncature
+/// euclidienne, déjà éprouvée pour -1, -1 000 et -1 001 nanosecondes). On ne
+/// perd donc rien, et l'anomalie reste LISIBLE — un horodatage négatif se
+/// remarque, un 1970 se confond avec une valeur par défaut.
+///
+/// Extraite pour être éprouvable : `SystemTimeError` n'est pas
+/// constructible hors de la bibliothèque standard, alors qu'une `Duration`
+/// l'est.
+fn micros_from_epoch(offset: Result<std::time::Duration, std::time::Duration>) -> i64 {
+    let nanos = match offset {
+        Ok(after) => i128::try_from(after.as_nanos()).unwrap_or(i128::MAX),
+        Err(before) => -i128::try_from(before.as_nanos()).unwrap_or(i128::MAX),
+    };
     kollega_core::Timestamp::from_unix_nanos(nanos).as_micros()
 }
 
@@ -253,6 +279,20 @@ impl AuditChainRepository for PgAuditChain<'_> {
         //     transaction reste saine et l'écriture devient idempotente ;
         //   * hauteur déjà prise (course d'écrivains) → NON couvert ici,
         //     l'erreur remonte et le pas entier se rejoue. C'est voulu.
+        // La hauteur est hachée en `u64` et stockée en `BIGINT` signé. La
+        // version précédente écrasait un dépassement par `i64::MAX` : la
+        // valeur STOCKÉE aurait alors différé de la valeur HACHÉE, et la
+        // chaîne serait devenue invérifiable — un « journal rompu » dont la
+        // cause réelle serait introuvable. Inatteignable en pratique (il y
+        // faudrait 2⁶³ entrées), mais le mode de défaillance était le
+        // mauvais : on refuse d'écrire plutôt que d'écrire un mensonge.
+        let height = i64::try_from(entry.height()).map_err(|_| {
+            StoreError::CorruptState(format!(
+                "hauteur de chaîne {} hors des bornes d'un BIGINT : \
+                 écrire une valeur écrêtée ferait diverger le stocké du haché",
+                entry.height()
+            ))
+        })?;
         let inserted = sqlx::query(
             "INSERT INTO audit_chain \
              (org_id, height, prev_hash, entry_hash, actor, action, tool_call_id, \
@@ -262,7 +302,7 @@ impl AuditChainRepository for PgAuditChain<'_> {
              DO NOTHING",
         )
         .bind(self.org_id)
-        .bind(i64::try_from(entry.height()).unwrap_or(i64::MAX))
+        .bind(height)
         .bind(entry.prev_hash().map(|h| h.0.to_vec()))
         .bind(entry.hash().0.to_vec())
         .bind(&entry.content().actor)
@@ -760,6 +800,31 @@ pub async fn purge_org_content(db: &Db, org_id: Uuid) -> Result<u64, StoreError>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Une horloge antérieure à l'époque ne doit pas produire « 1970 ».
+    ///
+    /// C'était le cas : `.unwrap_or(0)` remplaçait l'écart par zéro, et la
+    /// chaîne d'audit scellait une date fausse sans le signaler. Un
+    /// horodatage négatif, lui, se remarque — c'est toute la différence
+    /// entre une anomalie visible et une valeur par défaut plausible.
+    #[test]
+    fn a_clock_before_the_epoch_yields_a_negative_stamp_not_zero() {
+        use std::time::Duration;
+
+        assert_eq!(
+            micros_from_epoch(Ok(Duration::from_micros(1_700_000))),
+            1_700_000
+        );
+        assert_eq!(
+            micros_from_epoch(Err(Duration::from_micros(1_700_000))),
+            -1_700_000,
+            "l'écart doit être repris en NÉGATIF, pas remplacé par 0"
+        );
+        // Le cas exact qui se cachait : une machine à l'époque + rien.
+        assert_eq!(micros_from_epoch(Ok(Duration::ZERO)), 0);
+        // Et l'anomalie reste distinguable d'une horloge juste à l'époque.
+        assert!(micros_from_epoch(Err(Duration::from_nanos(1_001))) < 0);
+    }
 
     /// Approfondissement (nuit du 28 au 29/07) — première façon dont
     /// l'idempotence pourrait être FAUSSE sans qu'aucun test ne le voie :
