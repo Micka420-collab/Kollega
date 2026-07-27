@@ -9,7 +9,11 @@ description = "Persistance PostgreSQL — point de passage unique vers la base"
 # (kollega-store est de rang UPPER dans dependency_graph.rs).
 [dependencies]
 hex.workspace = true
-kollega-audit = { path = "../kollega-audit" }
+# `storage-boundary` : SEUL consommateur légitime de
+# `ContentDigest::from_storage` — relire une empreinte persistée sans la
+# recalculer. La garde textuelle de kollega-cli échoue si un autre crate
+# l'invoque.
+kollega-audit = { path = "../kollega-audit", features = ["storage-boundary"] }
 kollega-core = { path = "../kollega-core" }
 kollega-policy = { path = "../kollega-policy" }
 kollega-runtime = { path = "../kollega-runtime" }

@@ -13,6 +13,8 @@
 
 #![allow(async_fn_in_trait)] // contrats internes : pas de bornes d'envoi à figer ici
 
+use kollega_core::ToolCallId;
+
 use crate::chain::StoredEntry;
 use crate::content::{AuditContent, ContentDigest, ContentPayload};
 
@@ -23,10 +25,16 @@ pub trait AuditChainRepository {
 
     /// Ajoute une attestation en queue de chaîne (hauteur et lien calculés
     /// par l'implémentation, dans sa transaction).
+    ///
+    /// `tool_call` identifie l'appel d'outil concerné, quand il y en a un :
+    /// c'est ce qui permet de reconstituer les [`crate::records::AuditRecord`]
+    /// depuis la chaîne persistée et d'y valider la SÉQUENCE des appels.
+    /// Sans lui, le validateur asymétrique resterait du code mort.
     async fn append(
         &mut self,
         actor: &str,
         action: &str,
+        tool_call: Option<ToolCallId>,
         content: &AuditContent,
     ) -> Result<(), Self::Error>;
 

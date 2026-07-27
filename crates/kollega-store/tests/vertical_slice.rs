@@ -488,6 +488,57 @@ async fn the_vertical_slice_goes_through() {
         "T4 doit exécuter SON appel : l'effet de T3 ne lui appartient pas"
     );
 
+    // ---- 6 quater. La SÉQUENCE des appels a du sens (pas que la chaîne) ----
+    // `verify_org_chain` prouve que rien n'a été altéré ; ici on demande si
+    // ce que la chaîne raconte est COHÉRENT — le validateur asymétrique du
+    // bloc 3e appliqué à de vraies données, là où il ne voyait que des
+    // tests purs. Toutes les tâches sont terminées : aucun appel ouvert.
+    let report = driver::verify_org_sequence(&db, org)
+        .await
+        .expect("lecture de la séquence");
+    assert!(
+        report.is_valid(),
+        "la séquence réelle doit être valide : {:?}",
+        report.violations
+    );
+    assert!(
+        report.open_calls.is_empty(),
+        "toutes les tâches sont terminées, aucun appel ne doit rester ouvert : {:?}",
+        report.open_calls
+    );
+
+    // Une tâche SUSPENDUE laisse un appel OUVERT — information, pas
+    // violation : c'est l'asymétrie, sans laquelle une validation en
+    // attente ressemblerait à un journal corrompu.
+    let t5 = Uuid::new_v4();
+    driver::create_task(&db, org, t5, Cents(500), 8)
+        .await
+        .expect("création T5");
+    driver::run_task_step(
+        &db,
+        org,
+        t5,
+        &relance_script(),
+        &tools,
+        &relance_rules(),
+        None,
+    )
+    .await
+    .expect("T5 suspendue");
+    let report = driver::verify_org_sequence(&db, org)
+        .await
+        .expect("séquence avec appel en attente");
+    assert!(
+        report.is_valid(),
+        "une validation en attente n'est PAS une corruption : {:?}",
+        report.violations
+    );
+    assert_eq!(
+        report.open_calls.len(),
+        1,
+        "l'appel suspendu de T5 est signalé comme ouvert"
+    );
+
     // ---- 7. Isolation : l'organisation témoin ne voit RIEN -----------------
     let mut tx = db.org_transaction(witness).await.expect("tx témoin");
     let seen: i64 = sqlx::query("SELECT count(*) FROM audit_chain")

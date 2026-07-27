@@ -29,9 +29,10 @@
 
 use kollega_audit::chain::{ChainTip, EntryContent, Hash32, OrgChain, StoredEntry};
 use kollega_audit::content::{AuditContent, ContentDigest, ContentPayload};
+use kollega_audit::records::{verify_sequence, AbandonReason, AuditRecord, SequenceReport};
 use kollega_audit::repository::{AuditChainRepository, AuditContentRepository};
 use kollega_audit::CanonicalValue;
-use kollega_core::{Cents, Decision, OrgId, TaskStatus};
+use kollega_core::{Cents, Decision, OrgId, TaskStatus, ToolCallId};
 use kollega_policy::{decide, ToolCallRequest, ToolRule};
 use kollega_runtime::machine::{
     drive, ApprovalDecision, AuditEvent, ModelProvider, PolicyEngine, TaskState, TaskStateEnvelope,
@@ -138,6 +139,28 @@ fn now_micros() -> i64 {
     kollega_core::Timestamp::from_unix_nanos(nanos).as_micros()
 }
 
+/// Appel d'outil concerné par un événement, s'il y en a un.
+///
+/// C'est le PONT entre la machine (qui identifie ses appels par
+/// `(task_id, iteration)`) et les [`AuditRecord`] du journal chaîné : sans
+/// lui, le validateur de séquence n'aurait jamais de vraies données à
+/// examiner.
+fn event_tool_call(task_id: Uuid, event: &AuditEvent) -> Option<ToolCallId> {
+    let iteration = match event {
+        AuditEvent::ToolCallIntended { iteration, .. }
+        | AuditEvent::ToolCallCompleted { iteration, .. }
+        | AuditEvent::ToolCallDenied { iteration, .. } => *iteration,
+        // Une demande de validation n'ouvre ni ne clôt un appel : l'appel
+        // est déjà ouvert par son intention, et il se clôra à l'exécution
+        // ou au refus. L'attacher ici en ferait un doublon d'ouverture.
+        AuditEvent::ApprovalRequested { .. }
+        | AuditEvent::ApprovalResolved { .. }
+        | AuditEvent::TaskStarted
+        | AuditEvent::TaskFinished { .. } => return None,
+    };
+    Some(ToolCallId::new(derive_tool_call_id(task_id, iteration)))
+}
+
 /// Nom d'action d'un événement de machine — stable, c'est ce qui est haché.
 fn event_action(event: &AuditEvent) -> &'static str {
     match event {
@@ -194,6 +217,7 @@ impl AuditChainRepository for PgAuditChain<'_> {
         &mut self,
         actor: &str,
         action: &str,
+        tool_call: Option<ToolCallId>,
         content: &AuditContent,
     ) -> Result<(), StoreError> {
         let digest = content.digest();
@@ -235,8 +259,9 @@ impl AuditChainRepository for PgAuditChain<'_> {
 
         let inserted = sqlx::query(
             "INSERT INTO audit_chain \
-             (org_id, height, prev_hash, entry_hash, actor, action, content_digest, timestamp_micros) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+             (org_id, height, prev_hash, entry_hash, actor, action, tool_call_id, \
+              content_digest, timestamp_micros) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(self.org_id)
         .bind(i64::try_from(entry.height()).unwrap_or(i64::MAX))
@@ -244,6 +269,7 @@ impl AuditChainRepository for PgAuditChain<'_> {
         .bind(entry.hash().0.to_vec())
         .bind(&entry.content().actor)
         .bind(&entry.content().action)
+        .bind(tool_call.map(|id| *id.as_uuid()))
         .bind(digest.as_bytes().to_vec())
         .bind(entry.content().timestamp_micros)
         .execute(&mut **self.tx)
@@ -348,6 +374,7 @@ async fn append_attestation(
     org_id: Uuid,
     actor: &str,
     action: &str,
+    tool_call: Option<ToolCallId>,
     content_json: &str,
 ) -> Result<(), StoreError> {
     let content = AuditContent::new(
@@ -359,7 +386,7 @@ async fn append_attestation(
     // chevauchants — un seul dépôt tient la transaction à la fois.
     PgAuditContent { tx, org_id }.put(&content).await?;
     PgAuditChain { tx, org_id }
-        .append(actor, action, &content)
+        .append(actor, action, tool_call, &content)
         .await
 }
 
@@ -448,7 +475,7 @@ async fn attest_step_abandoned(
     // bornée aux mêmes rejeux que le pas.
     for _ in 0..CHAIN_RETRIES {
         let mut tx = db.org_transaction(org_id).await?;
-        match append_attestation(&mut tx, org_id, &actor, "step_abandoned", &content).await {
+        match append_attestation(&mut tx, org_id, &actor, "step_abandoned", None, &content).await {
             Ok(()) => {
                 tx.commit().await?;
                 return Ok(());
@@ -576,7 +603,16 @@ async fn try_task_step(
     for event in &state.audit[audit_before..] {
         let content_json =
             serde_json::to_string(event).map_err(|e| StoreError::CorruptState(e.to_string()))?;
-        append_attestation(&mut tx, org_id, &actor, event_action(event), &content_json).await?;
+        let tool_call = event_tool_call(task_id, event);
+        append_attestation(
+            &mut tx,
+            org_id,
+            &actor,
+            event_action(event),
+            tool_call,
+            &content_json,
+        )
+        .await?;
     }
 
     // Écritures : l'état (enveloppe scellée), le statut, le solde décidé
@@ -636,6 +672,63 @@ pub async fn verify_org_chain(db: &Db, org_id: Uuid) -> Result<ChainCheck, Store
     })
 }
 
+/// Vérifie la SÉQUENCE des appels d'outils inscrite dans la chaîne réelle.
+///
+/// Complète [`verify_org_chain`], qui prouve que la chaîne n'a pas été
+/// altérée : ici on demande si ce qu'elle raconte a du SENS — pas de
+/// clôture sans intention, pas d'intention en double, rien après une
+/// clôture. Le rapport distingue les appels OUVERTS (une tâche en cours,
+/// une validation en attente, un redémarrage : légitime) des VIOLATIONS
+/// (les seules qui invalident) — c'est l'asymétrie du bloc 3e appliquée aux
+/// données de production, là où elle ne vivait que dans des tests purs.
+pub async fn verify_org_sequence(db: &Db, org_id: Uuid) -> Result<SequenceReport, StoreError> {
+    let mut tx = db.org_transaction(org_id).await?;
+    let rows = sqlx::query(
+        "SELECT action, tool_call_id, content_digest FROM audit_chain \
+         WHERE tool_call_id IS NOT NULL ORDER BY height",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut records = Vec::with_capacity(rows.len());
+    for row in rows {
+        let action: String = row.get(0);
+        let tool_call_id: Uuid = row.get(1);
+        let digest: Option<Vec<u8>> = row.get(2);
+        let digest: [u8; 32] = digest
+            .ok_or_else(|| StoreError::CorruptState("attestation sans empreinte".into()))?
+            .try_into()
+            .map_err(|_| {
+                StoreError::CorruptState("empreinte d'une autre taille que 32 octets".into())
+            })?;
+        let tool_call_id = ToolCallId::new(tool_call_id);
+        // La frontière de stockage : l'empreinte est RELUE, pas recalculée
+        // — c'est `verify_org_chain` qui garantit qu'elle n'a pas bougé.
+        let digest = ContentDigest::from_storage(digest);
+        records.push(match action.as_str() {
+            "tool_call_intended" => AuditRecord::Intent {
+                tool_call_id,
+                request: digest,
+            },
+            "tool_call_completed" => AuditRecord::Outcome {
+                tool_call_id,
+                result: digest,
+            },
+            // Un refus CLÔT l'appel : l'outil n'a pas agi, et il n'agira
+            // plus. Ce n'est ni un résultat, ni un abandon à effet inconnu.
+            "tool_call_denied" => AuditRecord::Abandoned {
+                tool_call_id,
+                reason: AbandonReason::RestartWithUnknownEffect,
+            },
+            other => {
+                return Err(StoreError::CorruptState(format!(
+                    "action {other} porte un identifiant d'appel sans être un événement d'appel"
+                )))
+            }
+        });
+    }
+    Ok(verify_sequence(&records))
+}
+
 /// Purge RGPD du CONTENU d'audit d'une organisation (invariant 12) —
 /// la chaîne d'attestations, elle, reste intacte et vérifiable.
 ///
@@ -652,7 +745,15 @@ pub async fn purge_org_content(db: &Db, org_id: Uuid) -> Result<u64, StoreError>
     .purge_org()
     .await?;
     let content_json = format!("{{\"purged_rows\":{purged}}}");
-    append_attestation(&mut tx, org_id, "system", "content_purged", &content_json).await?;
+    append_attestation(
+        &mut tx,
+        org_id,
+        "system",
+        "content_purged",
+        None,
+        &content_json,
+    )
+    .await?;
     tx.commit().await?;
     Ok(purged)
 }
