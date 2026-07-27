@@ -71,8 +71,17 @@ pub trait PolicyEngine {
 
 /// Exécute un outil autorisé (trait, pour découpler des vrais outils).
 pub trait ToolRunner {
-    /// Exécute l'outil ; retourne une trace de résultat (opaque ici).
-    fn run(&self, tool: &str) -> String;
+    /// Exécute l'outil de l'itération `iteration` ; retourne une trace de
+    /// résultat (opaque ici).
+    ///
+    /// L'ITÉRATION EST DANS LA SIGNATURE, et ce n'est pas décoratif : un
+    /// exécuteur ne peut être IDEMPOTENT que s'il sait QUEL appel il
+    /// exécute. Avec `(task_id, iteration)` — dérivable, donc identique
+    /// après un rejeu — la périphérie peut reconnaître un effet déjà
+    /// réalisé au lieu de l'accomplir deux fois (double envoi de mail).
+    /// La v1 du trait ne recevait que le nom de l'outil : elle rendait
+    /// l'idempotence inexprimable.
+    fn run(&self, tool: &str, iteration: u32) -> String;
 }
 
 /// Événement d'audit émis par la boucle (invariant 3 de CLAUDE.md).
@@ -84,11 +93,16 @@ pub enum AuditEvent {
     ToolCallIntended {
         /// Outil visé.
         tool: String,
+        /// Itération : avec le `task_id`, elle IDENTIFIE l'appel (clé
+        /// dérivable, stable après un rejeu — cf. [`ToolRunner::run`]).
+        iteration: u32,
     },
     /// Appel d'outil terminé — émis APRÈS l'exécution.
     ToolCallCompleted {
         /// Outil exécuté.
         tool: String,
+        /// Itération identifiant l'appel.
+        iteration: u32,
         /// Coût comptabilisé.
         cost: Cents,
     },
@@ -96,6 +110,8 @@ pub enum AuditEvent {
     ToolCallDenied {
         /// Outil refusé.
         tool: String,
+        /// Itération identifiant l'appel.
+        iteration: u32,
         /// Motif.
         reason: String,
     },
@@ -103,6 +119,8 @@ pub enum AuditEvent {
     ApprovalRequested {
         /// Outil en attente.
         tool: String,
+        /// Itération identifiant l'appel suspendu.
+        iteration: u32,
     },
     /// Validation tranchée.
     ApprovalResolved {
@@ -121,6 +139,9 @@ pub enum AuditEvent {
 pub struct PendingApproval {
     /// Outil en attente.
     pub tool: String,
+    /// Itération de l'appel suspendu — PERSISTÉE, pas déduite de l'ordre :
+    /// après une reprise, c'est elle qui redonne l'identité de l'appel.
+    pub iteration: u32,
     /// Coût modèle déjà planifié.
     pub model_cost: Cents,
     /// Coût de l'outil à exécuter si approuvé.
@@ -167,7 +188,14 @@ impl TaskState {
 /// À INCRÉMENTER à chaque changement de forme de [`TaskState`] ou de ses
 /// composants sérialisés : sans cela, une mise en production rendrait les
 /// tâches suspendues illisibles — ou pire, MAL lisibles.
-pub const TASK_STATE_FORMAT_VERSION: u32 = 1;
+///
+/// Historique : v1 (28/07, forme initiale) ; **v2 (nuit du 28 au 29/07 :
+/// `iteration` ajoutée aux événements d'appel d'outil et à
+/// [`PendingApproval`], pour rendre l'identité d'un appel dérivable —
+/// prérequis de l'idempotence).** Le mécanisme a servi dès son premier
+/// changement de forme réel : une tâche v1 suspendue est refusée
+/// proprement au lieu d'être mal désérialisée.
+pub const TASK_STATE_FORMAT_VERSION: u32 = 2;
 
 /// Erreur d'ouverture d'une enveloppe d'état.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -303,6 +331,7 @@ pub fn drive(
         let Some(pending) = state.pending.take() else {
             state.audit.push(AuditEvent::ToolCallDenied {
                 tool: "?".to_owned(),
+                iteration: state.iteration,
                 reason: "état incohérent : suspension sans appel en attente — tâche close en échec"
                     .to_owned(),
             });
@@ -314,6 +343,7 @@ pub fn drive(
             ApprovalDecision::Reject => {
                 state.audit.push(AuditEvent::ToolCallDenied {
                     tool: pending.tool.clone(),
+                    iteration: pending.iteration,
                     reason: "refusé par validation humaine".to_owned(),
                 });
                 finish(state, TaskStatus::Failed);
@@ -325,9 +355,13 @@ pub fn drive(
                     finish(state, state.status);
                     return;
                 }
-                tools.run(&pending.tool);
+                // L'itération vient du PENDING PERSISTÉ, pas du compteur
+                // courant : après une reprise, c'est ce qui redonne à
+                // l'appel la même identité qu'avant l'interruption.
+                tools.run(&pending.tool, pending.iteration);
                 state.audit.push(AuditEvent::ToolCallCompleted {
                     tool: pending.tool,
+                    iteration: pending.iteration,
                     cost: total,
                 });
                 state.iteration += 1;
@@ -357,26 +391,31 @@ pub fn drive(
                 model_cost,
                 tool_cost,
             } => {
+                let iteration = state.iteration;
                 // Invariant 3 : intention AVANT toute exécution.
-                state
-                    .audit
-                    .push(AuditEvent::ToolCallIntended { tool: tool.clone() });
+                state.audit.push(AuditEvent::ToolCallIntended {
+                    tool: tool.clone(),
+                    iteration,
+                });
                 // Invariant 2 : passage obligatoire par la politique.
                 match policy.decide(&tool) {
                     Decision::Deny { reason } => {
                         state.audit.push(AuditEvent::ToolCallDenied {
                             tool: tool.clone(),
+                            iteration,
                             reason,
                         });
                         finish(state, TaskStatus::Failed);
                         return;
                     }
                     Decision::RequireApproval { .. } => {
-                        state
-                            .audit
-                            .push(AuditEvent::ApprovalRequested { tool: tool.clone() });
+                        state.audit.push(AuditEvent::ApprovalRequested {
+                            tool: tool.clone(),
+                            iteration,
+                        });
                         state.pending = Some(PendingApproval {
                             tool,
+                            iteration,
                             model_cost,
                             tool_cost,
                         });
@@ -391,10 +430,12 @@ pub fn drive(
                             finish(state, state.status);
                             return;
                         }
-                        tools.run(&tool);
-                        state
-                            .audit
-                            .push(AuditEvent::ToolCallCompleted { tool, cost: total });
+                        tools.run(&tool, iteration);
+                        state.audit.push(AuditEvent::ToolCallCompleted {
+                            tool,
+                            iteration,
+                            cost: total,
+                        });
                         state.iteration += 1;
                     }
                 }
@@ -443,10 +484,18 @@ mod tests {
         }
     }
 
-    struct EchoTools;
+    /// Exécuteur d'écho qui ENREGISTRE ce qu'il a exécuté : c'est ce
+    /// registre qui prouve la non-répétition d'un effet.
+    #[derive(Default)]
+    struct EchoTools {
+        executed: std::cell::RefCell<Vec<(String, u32)>>,
+    }
     impl ToolRunner for EchoTools {
-        fn run(&self, tool: &str) -> String {
-            format!("résultat de {tool}")
+        fn run(&self, tool: &str, iteration: u32) -> String {
+            self.executed
+                .borrow_mut()
+                .push((tool.to_owned(), iteration));
+            format!("résultat de {tool} (itération {iteration})")
         }
     }
 
@@ -468,7 +517,23 @@ mod tests {
         let policy = MapPolicy {
             decisions: decisions.into_iter().collect(),
         };
-        drive(state, &model, &policy, &EchoTools, approval);
+        drive(state, &model, &policy, &EchoTools::default(), approval);
+    }
+
+    /// Comme [`run`], mais rend le registre des exécutions réelles.
+    fn run_recording(
+        actions: Vec<PlannedAction>,
+        decisions: Vec<(String, Decision)>,
+        state: &mut TaskState,
+        approval: Option<ApprovalDecision>,
+    ) -> Vec<(String, u32)> {
+        let model = ScriptedModel { actions };
+        let policy = MapPolicy {
+            decisions: decisions.into_iter().collect(),
+        };
+        let tools = EchoTools::default();
+        drive(state, &model, &policy, &tools, approval);
+        tools.executed.into_inner()
     }
 
     #[test]
@@ -671,7 +736,9 @@ mod tests {
         let sealed = TaskStateEnvelope::seal(state.clone());
         assert_eq!(sealed.version(), TASK_STATE_FORMAT_VERSION);
         let json = serde_json::to_string(&sealed).unwrap();
-        assert!(json.contains("\"version\":1"));
+        // Comparé à la CONSTANTE, jamais à un littéral : ce test ne doit pas
+        // devenir une corvée à chaque changement de format légitime.
+        assert!(json.contains(&format!("\"version\":{TASK_STATE_FORMAT_VERSION}")));
         let reopened: TaskStateEnvelope = serde_json::from_str(&json).unwrap();
         assert_eq!(reopened.into_state(), state);
     }
@@ -681,16 +748,18 @@ mod tests {
         // Une enveloppe d'une version future — dont l'état N'A PAS le
         // schéma courant — doit être REFUSÉE avec une erreur qui nomme la
         // version, jamais interprétée avec le schéma courant.
-        let future = r#"{"version":2,"state":{"forme":"inconnue de ce binaire"}}"#;
-        let error = serde_json::from_str::<TaskStateEnvelope>(future)
+        let unknown = TASK_STATE_FORMAT_VERSION + 1;
+        let future =
+            format!(r#"{{"version":{unknown},"state":{{"forme":"inconnue de ce binaire"}}}}"#);
+        let error = serde_json::from_str::<TaskStateEnvelope>(&future)
             .expect_err("une version inconnue doit être refusée");
         let message = error.to_string();
         assert!(
-            message.contains("version d'enveloppe d'état inconnue : 2"),
+            message.contains(&format!("version d'enveloppe d'état inconnue : {unknown}")),
             "l'erreur doit nommer la version trouvée : {message}"
         );
         assert!(
-            message.contains("supportée : 1"),
+            message.contains(&format!("supportée : {TASK_STATE_FORMAT_VERSION}")),
             "l'erreur doit nommer la version supportée : {message}"
         );
 
@@ -698,6 +767,79 @@ mod tests {
         // optionnel, un état nu d'avant le bloc 5 ne passe pas pour une
         // enveloppe.
         assert!(serde_json::from_str::<TaskStateEnvelope>(r#"{"state":{}}"#).is_err());
+    }
+
+    #[test]
+    fn a_real_v1_envelope_is_refused_not_silently_misread() {
+        // LE cas réel, et la raison d'être du dispositif : une tâche
+        // suspendue AVANT l'ajout d'`iteration` (v1). Son état est
+        // structurellement lisible par serde — les champs manquants sont
+        // simplement absents des variantes — donc sans contrôle de version
+        // elle serait MAL relue : un appel en attente sans identité, dont
+        // l'idempotence ne pourrait plus reconnaître l'effet.
+        let v1 = r#"{"version":1,"state":{
+            "status":"waiting_approval","iteration":0,"max_iterations":8,
+            "budget":{"ceiling":500,"consumed":0,"org_balance":10000},
+            "audit":[{"TaskStarted":null}],
+            "pending":{"tool":"mail.send","model_cost":30,"tool_cost":20},
+            "conclusion":null}}"#;
+        let error = serde_json::from_str::<TaskStateEnvelope>(v1)
+            .expect_err("une enveloppe v1 doit être refusée par ce binaire v2");
+        assert!(error
+            .to_string()
+            .contains("version d'enveloppe d'état inconnue : 1"));
+    }
+
+    #[test]
+    fn the_resumed_call_keeps_the_identity_it_had_before_the_interruption() {
+        // Prérequis de l'idempotence : après une suspension puis une
+        // reprise, l'appel exécuté porte l'itération de sa PLANIFICATION,
+        // pas le compteur courant — sinon un rejeu forgerait une autre
+        // identité et ne reconnaîtrait jamais l'effet déjà réalisé.
+        let actions = vec![
+            PlannedAction::UseTool {
+                tool: "doc.read".to_owned(),
+                model_cost: Cents(10),
+                tool_cost: Cents(20),
+            },
+            PlannedAction::UseTool {
+                tool: "mail.send".to_owned(),
+                model_cost: Cents(10),
+                tool_cost: Cents(20),
+            },
+            PlannedAction::Conclude {
+                model_cost: Cents(5),
+                answer: "fini".to_owned(),
+            },
+        ];
+        let decisions = vec![
+            allow("doc.read"),
+            (
+                "mail.send".to_owned(),
+                Decision::RequireApproval {
+                    threshold: "envoi".to_owned(),
+                },
+            ),
+        ];
+        let mut state = TaskState::new(8, budget(10_000, 10_000));
+        // Itération 0 exécutée, itération 1 suspendue en validation.
+        let first = run_recording(actions.clone(), decisions.clone(), &mut state, None);
+        assert_eq!(first, vec![("doc.read".to_owned(), 0)]);
+        assert_eq!(state.status, TaskStatus::WaitingApproval);
+        assert_eq!(
+            state.pending.as_ref().map(|p| p.iteration),
+            Some(1),
+            "l'itération de l'appel suspendu est PERSISTÉE"
+        );
+        // Reprise : l'exécution porte bien l'itération 1, celle du plan.
+        let resumed = run_recording(
+            actions,
+            decisions,
+            &mut state,
+            Some(ApprovalDecision::Approve),
+        );
+        assert_eq!(resumed, vec![("mail.send".to_owned(), 1)]);
+        assert_eq!(state.status, TaskStatus::Succeeded);
     }
 
     #[test]

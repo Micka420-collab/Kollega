@@ -37,6 +37,8 @@ use kollega_runtime::machine::{
 };
 use sha2::{Digest as _, Sha256};
 use sqlx::{Postgres, Row as _, Transaction};
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 use crate::{Db, StoreError};
@@ -54,6 +56,54 @@ pub struct SliceStep {
     pub conclusion: Option<String>,
     /// Solde d'organisation APRÈS le pas (celui écrit en base).
     pub org_balance: Cents,
+}
+
+/// Identité DÉRIVÉE d'un appel d'outil : `SHA-256(task_id || iteration)`.
+///
+/// Dérivable, donc STABLE : deux exécutions du même pas calculent la même
+/// identité, et la seconde reconnaît l'effet de la première. Un identifiant
+/// tiré au hasard à chaque tentative rendrait l'idempotence impossible.
+/// Les bits de version/variante sont posés pour que la valeur soit un UUID
+/// bien formé (v8, « custom »).
+fn derive_tool_call_id(task_id: Uuid, iteration: u32) -> Uuid {
+    let mut hasher = Sha256::new();
+    hasher.update(task_id.as_bytes());
+    hasher.update(iteration.to_be_bytes());
+    let digest: [u8; 32] = hasher.finalize().into();
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0F) | 0x80; // version 8
+    bytes[8] = (bytes[8] & 0x3F) | 0x80; // variante RFC 4122
+    Uuid::from_bytes(bytes)
+}
+
+/// Exécuteur IDEMPOTENT : n'accomplit un effet qu'une seule fois.
+///
+/// Les effets déjà réalisés pour cette tâche sont chargés AVANT le pas
+/// (`known`) ; un appel dont l'effet est connu rend le résultat enregistré
+/// SANS toucher à l'exécuteur réel. Les effets nouveaux sont collectés
+/// (`performed`) et persistés dans la transaction du pas : soit le pas
+/// entier est validé — effet et sa trace ensemble —, soit rien.
+struct IdempotentTools<'a> {
+    inner: &'a dyn ToolRunner,
+    known: BTreeMap<u32, String>,
+    performed: RefCell<Vec<(u32, String, String)>>,
+}
+
+impl ToolRunner for IdempotentTools<'_> {
+    fn run(&self, tool: &str, iteration: u32) -> String {
+        if let Some(recorded) = self.known.get(&iteration) {
+            // L'effet a DÉJÀ eu lieu dans le monde réel : on rend son
+            // résultat, on ne le refait pas. C'est ici que le second mail
+            // n'est pas envoyé.
+            return recorded.clone();
+        }
+        let result = self.inner.run(tool, iteration);
+        self.performed
+            .borrow_mut()
+            .push((iteration, tool.to_owned(), result.clone()));
+        result
+    }
 }
 
 /// Adaptateur : la machine délègue au moteur de politiques réel.
@@ -339,10 +389,81 @@ async fn try_task_step(
         .refreshed(Cents(balance))
         .map_err(|e| StoreError::Accounting(e.to_string()))?;
 
-    // La machine — pure, sans horloge, sans base.
+    // Les effets DÉJÀ RÉALISÉS pour cette tâche : ce que le monde a déjà
+    // subi et qu'il ne faut surtout pas lui infliger deux fois. Le contenu
+    // vit dans audit_content (purgeable) ; une jointure à gauche laisse
+    // voir le cas « effet enregistré, contenu purgé », traité en erreur
+    // explicite plus bas — jamais en ré-exécution silencieuse.
+    let effect_rows = sqlx::query(
+        "SELECT e.iteration, c.content \
+         FROM tool_call_effects e \
+         LEFT JOIN audit_content c ON c.org_id = e.org_id AND c.digest = e.result_digest \
+         WHERE e.task_id = $1",
+    )
+    .bind(task_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut known = BTreeMap::new();
+    for row in effect_rows {
+        let iteration: i64 = row.get(0);
+        let content: Option<String> = row.get(1);
+        let iteration = u32::try_from(iteration)
+            .map_err(|_| StoreError::CorruptState("itération d'effet hors bornes".into()))?;
+        let Some(content) = content else {
+            return Err(StoreError::CorruptState(format!(
+                "effet de l'itération {iteration} enregistré mais son contenu a été purgé : \
+                 rejeu impossible sans risquer de refaire l'effet — tâche à clore à la main"
+            )));
+        };
+        known.insert(iteration, content);
+    }
+
+    // La machine — pure, sans horloge, sans base — et son exécuteur rendu
+    // idempotent par la mémoire des effets.
     let audit_before = state.audit.len();
     let policy = RulesPolicy { rules };
-    drive(&mut state, model, &policy, tools, approval);
+    let idempotent = IdempotentTools {
+        inner: tools,
+        known,
+        performed: RefCell::new(Vec::new()),
+    };
+    drive(&mut state, model, &policy, &idempotent, approval);
+
+    // Les effets NOUVEAUX : leur trace part dans la même transaction que le
+    // pas. Soit l'effet et sa mémoire sont validés ensemble, soit le pas
+    // entier est annulé et l'effet sera reconnu comme non enregistré.
+    for (iteration, tool, result) in idempotent.performed.into_inner() {
+        let digest: [u8; 32] = Sha256::digest(result.as_bytes()).into();
+        sqlx::query(
+            "INSERT INTO audit_content (org_id, digest, content) VALUES ($1, $2, $3) \
+             ON CONFLICT (org_id, digest) DO NOTHING",
+        )
+        .bind(org_id)
+        .bind(digest.to_vec())
+        .bind(&result)
+        .execute(&mut *tx)
+        .await?;
+        let recorded = sqlx::query(
+            "INSERT INTO tool_call_effects \
+             (org_id, tool_call_id, task_id, iteration, tool, result_digest) \
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(org_id)
+        .bind(derive_tool_call_id(task_id, iteration))
+        .bind(task_id)
+        .bind(i64::from(iteration))
+        .bind(&tool)
+        .bind(digest.to_vec())
+        .execute(&mut *tx)
+        .await;
+        match recorded {
+            Ok(_) => {}
+            // Un autre écrivain a enregistré le MÊME effet : sa trace fait
+            // foi, la nôtre est redondante. Ce n'est pas une erreur.
+            Err(sqlx::Error::Database(db)) if db.code().as_deref() == Some("23505") => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
 
     // Chaque événement nouveau : une attestation + un contenu.
     let actor = task_id.to_string();

@@ -44,12 +44,24 @@ impl ModelProvider for ScriptedModel {
     }
 }
 
-/// Exécuteur d'outils factice : retourne une trace fixe.
-struct FixedTools;
+/// Exécuteur d'outils factice qui COMPTE ses exécutions réelles : c'est ce
+/// compteur qui prouve qu'un effet n'a pas été accompli deux fois.
+#[derive(Default)]
+struct FixedTools {
+    executions: std::sync::atomic::AtomicUsize,
+}
+
+impl FixedTools {
+    fn count(&self) -> usize {
+        self.executions.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
 
 impl ToolRunner for FixedTools {
-    fn run(&self, tool: &str) -> String {
-        format!("exécuté : {tool}")
+    fn run(&self, tool: &str, iteration: u32) -> String {
+        self.executions
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        format!("exécuté : {tool} (itération {iteration})")
     }
 }
 
@@ -158,7 +170,7 @@ async fn the_vertical_slice_goes_through() {
     seed_org(&db, org, "Org Tranche", 10_000).await;
     seed_org(&db, witness, "Org Témoin", 10_000).await;
 
-    let tools = FixedTools;
+    let tools = FixedTools::default();
 
     // ---- 1. Créée → politique → suspendue (validation humaine) -------------
     let t1 = Uuid::new_v4();
@@ -337,6 +349,106 @@ async fn the_vertical_slice_goes_through() {
         .await
         .expect("chaîne redevenue saine");
 
+    // ---- 6 bis. IDEMPOTENCE : l'effet a eu lieu, l'état revient en arrière -
+    // LE scénario dangereux du chemin réel : le mail est parti, puis la
+    // transaction du pas est annulée (conflit, panne, rejeu). Sans mémoire
+    // des effets, le rejeu envoie un SECOND mail. Ici, on le reconstitue
+    // exactement : on capture l'état suspendu, on laisse le pas s'exécuter
+    // (l'effet a lieu), on REMET l'état d'avant, et on rejoue.
+    let t3 = Uuid::new_v4();
+    driver::create_task(&db, org, t3, Cents(500), 8)
+        .await
+        .expect("création T3");
+    driver::run_task_step(
+        &db,
+        org,
+        t3,
+        &relance_script(),
+        &tools,
+        &relance_rules(),
+        None,
+    )
+    .await
+    .expect("T3 suspendue");
+    // L'état suspendu, tel qu'il est en base avant l'exécution de l'outil.
+    let suspended_state: String = sqlx::query("SELECT state::text FROM tasks WHERE id = $1")
+        .bind(t3)
+        .fetch_one(&mut admin)
+        .await
+        .expect("capture de l'état suspendu")
+        .get(0);
+
+    let before = tools.count();
+    driver::run_task_step(
+        &db,
+        org,
+        t3,
+        &relance_script(),
+        &tools,
+        &relance_rules(),
+        Some(ApprovalDecision::Approve),
+    )
+    .await
+    .expect("T3 exécute l'outil");
+    assert_eq!(tools.count(), before + 1, "l'outil s'exécute une fois");
+
+    // Retour arrière de l'ÉTAT SEUL (le rôle de migration écrit ce que le
+    // rôle applicatif ne peut pas défaire) : l'effet, lui, reste enregistré.
+    sqlx::query("UPDATE tasks SET state = $2::jsonb, status = 'waiting_approval' WHERE id = $1")
+        .bind(t3)
+        .bind(&suspended_state)
+        .execute(&mut admin)
+        .await
+        .expect("remise de l'état suspendu");
+
+    let replay = driver::run_task_step(
+        &db,
+        org,
+        t3,
+        &relance_script(),
+        &tools,
+        &relance_rules(),
+        Some(ApprovalDecision::Approve),
+    )
+    .await
+    .expect("rejeu du pas");
+    assert_eq!(
+        tools.count(),
+        before + 1,
+        "LE POINT : le rejeu ne doit PAS ré-exécuter l'outil — pas de second mail"
+    );
+    assert_eq!(
+        replay.status,
+        TaskStatus::Succeeded,
+        "le rejeu aboutit quand même"
+    );
+
+    // L'effet est enregistré une seule fois, sous une identité DÉRIVÉE
+    // (donc identique d'un rejeu à l'autre).
+    let mut tx = db.org_transaction(org).await.expect("tx effets");
+    let effects: i64 = sqlx::query("SELECT count(*) FROM tool_call_effects WHERE task_id = $1")
+        .bind(t3)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("comptage des effets")
+        .get(0);
+    assert_eq!(
+        effects, 1,
+        "un seul effet enregistré pour un seul effet réel"
+    );
+    drop(tx);
+
+    // Le rôle applicatif ne peut ni défaire ni réécrire un effet.
+    let mut tx = db.org_transaction(org).await.expect("tx effets 2");
+    assert!(
+        sqlx::query("DELETE FROM tool_call_effects")
+            .execute(&mut *tx)
+            .await
+            .is_err(),
+        "un effet realisé ne se supprime pas"
+    );
+    drop(tx);
+
     // ---- 7. Isolation : l'organisation témoin ne voit RIEN -----------------
     let mut tx = db.org_transaction(witness).await.expect("tx témoin");
     let seen: i64 = sqlx::query("SELECT count(*) FROM audit_chain")
@@ -359,12 +471,20 @@ async fn the_vertical_slice_goes_through() {
         contents_before >= 6,
         "les contenus d'audit existent avant purge"
     );
+    let entries_before = driver::verify_org_chain(&db, org)
+        .await
+        .expect("chaîne saine avant purge")
+        .entries;
     let purged = driver::purge_org_content(&db, org).await.expect("purge");
     assert_eq!(purged, contents_before as u64);
     let check = driver::verify_org_chain(&db, org)
         .await
         .expect("la chaîne d'attestations survit à la purge du contenu");
-    assert_eq!(check.entries, 13, "12 attestations + la trace de purge");
+    assert_eq!(
+        check.entries,
+        entries_before + 1,
+        "la chaîne ne perd rien à la purge, et gagne la trace de purge"
+    );
     let mut tx = db.org_transaction(org).await.expect("tx contenu après");
     let contents_after: i64 = sqlx::query("SELECT count(*) FROM audit_content")
         .fetch_one(&mut *tx)
