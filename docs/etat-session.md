@@ -178,6 +178,37 @@
 >     (avec une liste explicite des tables PRÉVUES, jalon à l'appui), et
 >     le titre d'un ADR adossé au numéro de son fichier.
 >
+> 21. **Balayage complet des « invariant N » : rien d'autre.** Après les
+>     corrections des ADR 0003 et 0004, les quelque soixante citations de
+>     la documentation sont toutes justes. La classe d'erreur était
+>     confinée à ces deux fichiers. Une garde adosse désormais la matrice
+>     aux **treize invariants déclarés par CLAUDE.md** — lue, jamais
+>     écrite : un invariant ajouté à la constitution sans sa ligne serait
+>     un engagement que rien ne surveille.
+> 22. **`jalons.md` et `compose.yaml` : aucun écart.** La définition de
+>     terminé de M0 exige un `compose.yaml` — il existe (52 lignes), et
+>     ses quatre variables d'environnement correspondent exactement à
+>     celles que lit le binaire. Mais rien ne le garantissait, et cette
+>     composition n'est **exécutée nulle part** : la CI construit l'image,
+>     elle ne lance pas la composition. Renommer une variable dans
+>     `main.rs` l'aurait cassée en silence, la panne n'apparaissant qu'au
+>     premier déploiement. Une garde tient maintenant la correspondance.
+> 23. **Une garde m'a attrapé, puis une autre — trois fois en tout.** (a)
+>     Ma note de session nommait la table audit_log **entre accents
+>     graves** en expliquant qu'elle n'a jamais existé : la garde des noms
+>     de tables, écrite au commit
+>     précédent, a rougi sur son auteur au premier document suivant (CI
+>     n°99). (b) Le fichier de la garde de déploiement contenait le texte
+>     `std::env::var(` comme MOTIF, que la garde anti-saut traque — elle
+>     s'était tendu le même piège à elle-même quelques heures plus tôt.
+>     (c) Et en RÉDIGEANT ce point (a), j'ai recopié la faute avec ses
+>     accents graves — la garde a rougi une troisième fois, mais cette
+>     fois **avant** le commit, parce que je vérifie désormais les gardes
+>     documentaires avant de committer de la documentation.
+>     Les trois corrigés. **Leçon : un commit « docs » n'est pas plus sûr
+>     qu'un autre dès lors que des gardes lisent la documentation** — je
+>     n'avais pas surveillé la CI après un commit purement documentaire.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
