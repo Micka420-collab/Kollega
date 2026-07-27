@@ -169,6 +169,19 @@ fn assemble(hostile: &str) -> kollega_core::CompiledPrompt {
 
 #[test]
 fn hostile_content_never_reaches_instruction_fields() {
+    // Le chiffre « 34 cas » est répété dans le README, le modèle de menace
+    // et la matrice. Sans cette ligne, retirer des cas laisserait les trois
+    // affirmations intactes : la couverture aurait diminué en silence
+    // pendant que la documentation continuerait d'annoncer l'ancienne. En
+    // ajouter est au contraire souhaitable — ce rouge-là demande seulement
+    // de mettre les trois textes à jour, ce qui est le but.
+    assert_eq!(
+        CORPUS.len(),
+        34,
+        "le corpus hostile a changé de taille : mettre à jour README.md, \
+         docs/invariant-7-modele-de-menace.md et docs/matrice-invariants.md, \
+         qui annoncent tous « 34 cas »"
+    );
     for (name, hostile) in CORPUS {
         let compiled = assemble(hostile);
         assert_eq!(

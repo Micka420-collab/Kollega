@@ -32,7 +32,14 @@ C'était un défaut, pas une protection :
 2. **Un plancher** — refuser le réellement cassé : `m < 8 192 KiB` (8 Mio),
    `t = 0`, `p = 0`.
 3. **Un plafond** — refuser l'absurdement coûteux : `m > 262 144 KiB`
-   (256 Mio), `t > 64`, `p > 16`. C'est le **seul** argument valable pour
+   (256 Mio), `t > 64`, `p > 16`.
+   > ⚠️ **Chiffre PÉRIMÉ, conservé pour l'historique.** L'amendement en fin
+   > de document abaisse ce plafond à **64 Mio** (`MAX_MEMORY_KIB =
+   > 65 536`), et c'est ce que le code applique. Le pointeur est posé ici
+   > parce qu'un lecteur qui ne lirait que ce point pourrait « réparer » le
+   > code en le remontant à 256 Mio, c'est-à-dire annuler la correction.
+
+   C'est le **seul** argument valable pour
    contraindre les paramètres d'une chaîne stockée : une chaîne forgée
    `m=4 Gio` ferait allouer 4 Gio à chaque tentative de connexion — un déni
    de service. Le contrôle précède la vérification : la mémoire demandée
