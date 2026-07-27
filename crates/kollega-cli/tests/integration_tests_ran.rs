@@ -123,6 +123,18 @@ fn every_test_gate_uses_a_variable_the_ci_guard_covers() {
             // d'une poignée d'octets, ce n'est plus l'argument de cet appel
             // mais une chaîne sans rapport : on ne conclut rien.
             let Some(open) = rest.find('"').filter(|at| *at < 8) else {
+                // Nom NON LITTÉRAL — une constante, une variable, une
+                // concaténation. La garde ne peut pas dire de quelle
+                // variable il s'agit, donc elle ne peut pas garantir
+                // qu'elle est couverte : un test gaté ainsi se sauterait
+                // en CI sans que rien ne l'annonce, ce qui est exactement
+                // la panne que cette garde existe pour empêcher. Signalé,
+                // jamais ignoré en silence.
+                sites += 1;
+                offenders.insert(format!(
+                    "{} lit l'environnement sous un nom NON LITTÉRAL",
+                    file.display()
+                ));
                 continue;
             };
             let Some(len) = rest[open + 1..].find('"') else {
