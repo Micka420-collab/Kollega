@@ -63,13 +63,19 @@ fn declares_function(corpus: &str, name: &str) -> bool {
 
 /// Vrai si l'entrée ressemble à un nom de fonction de test Rust — et non à
 /// un chemin de fichier, une colonne SQL ou une commande.
+/// Le seuil était à « plus de six caractères ET contenant un souligné ».
+/// Deux exigences de trop : la matrice cite « tests `anchor` » pour
+/// l'invariant 4, six lettres sans souligné — la citation était donc
+/// ignorée en silence, et aurait survécu à la disparition de ce qu'elle
+/// nomme. Une garde d'honnêteté documentaire qui écarte discrètement ce
+/// qu'elle ne sait pas classer perd sa raison d'être. Restent écartés les
+/// chemins et fichiers (point, tiret, barre oblique), qui ne sont pas des
+/// noms d'identifiants.
 fn looks_like_a_test_name(candidate: &str) -> bool {
-    !candidate.is_empty()
-        && candidate.len() > 6
+    candidate.len() >= 4
         && candidate
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-        && candidate.contains('_')
 }
 
 #[test]
@@ -126,9 +132,20 @@ fn every_test_named_in_the_matrix_actually_exists() {
         .map(str::to_owned)
         .collect();
 
+    // La matrice cite aussi des JOBS de CI — la preuve entière de
+    // l'invariant 13 en est un. Rien ne vérifiait leur existence : renommer
+    // `reversibilite` dans le workflow aurait laissé la matrice affirmer
+    // une preuve devenue introuvable. Un adossement valide est donc une
+    // fonction, une suite, ou un job.
+    let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml"))
+        .expect(".github/workflows/ci.yml doit exister");
+    let declares_job = |name: &str| workflow.contains(&format!("\n  {name}:"));
+
     let missing: Vec<&String> = claimed
         .iter()
-        .filter(|name| !declares_function(&corpus, name) && !suites.contains(*name))
+        .filter(|name| {
+            !declares_function(&corpus, name) && !suites.contains(*name) && !declares_job(name)
+        })
         .collect();
     assert!(
         missing.is_empty(),
