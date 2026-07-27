@@ -11,7 +11,7 @@ Ce n'est pas un chatbot ni un studio générique. La constitution du projet (pro
 
 ## État réel au 29/07/2026
 
-`cargo test --workspace` : **196 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
+`cargo test --workspace` : **197 tests, 0 échec** en local, et **exécutés en CI sur un PostgreSQL réel** (GitHub Actions, service pgvector/pg16).
 
 Ce nombre a **baissé** le 29/07, et c'est un progrès : cinq `crate_compiles() {}` — un par crate, corps vide — comptaient comme des tests verts sans rien prouver de plus que le compilateur, qui compile la crate de toute façon. Ils sont supprimés, et une garde refuse désormais tout test au corps vide. Un chiffre qu'on gonfle est un chiffre auquel on ne peut plus se fier.
 
