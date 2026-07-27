@@ -265,6 +265,46 @@ jobs:
         run: cosign sign --yes "$IMAGE_REF"
       - name: Attester le SBOM
         run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
+      - name: VÉRIFIER la signature et l'attestation (29/07)
+        # Signer et ne jamais vérifier, c'est prouver que `cosign sign` rend
+        # 0 — pas que quiconque peut authentifier l'image. Une signature
+        # qu'on n'a jamais su valider n'est pas une garantie, c'est une
+        # dépense. Cette étape est donc le PREMIER endroit où l'affirmation
+        # « image signée » est mise à l'épreuve.
+        #
+        # L'identité est ÉPINGLÉE, pas laissée libre : accepter n'importe
+        # quel signataire reviendrait à vérifier qu'une signature existe
+        # sans vérifier de QUI elle vient — ce qui ne vaut rien. Le job ne
+        # tournant que sur une poussée dans main, l'identité exacte est
+        # connue : c'est ce workflow, sur cette référence.
+        #
+        # L'échec est écrit dans le RÉSUMÉ de la run, lisible sans jeton :
+        # les journaux bruts n'en sont pas, et un rouge indéchiffrable ne
+        # vaut guère mieux qu'un vert douteux.
+        run: |
+          IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}"
+          ISSUER="https://token.actions.githubusercontent.com"
+          verifier() {
+            label="$1"; shift
+            if ! "$@" > verif-out.txt 2>&1; then
+              {
+                echo "### ÉCHEC — $label"
+                echo "identité attendue : $IDENTITY"
+                echo '```'
+                tail -c 3000 verif-out.txt
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          }
+          verifier "cosign verify (signature de l'image)" \
+            cosign verify --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "$ISSUER" "$IMAGE_REF"
+          verifier "cosign verify-attestation (SBOM)" \
+            cosign verify-attestation --type spdxjson \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "$ISSUER" "$IMAGE_REF"
+          echo "signature ET attestation SBOM vérifiées pour $IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom
