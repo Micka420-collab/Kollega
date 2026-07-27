@@ -160,3 +160,105 @@ async fn two_concurrent_tasks_never_overdraw_the_credit() {
     );
     assert!(balance >= 0, "un client ne consomme jamais à découvert");
 }
+
+/// Invariant 6 sur base réelle : le plafond de tâche arrête PROPREMENT.
+///
+/// Le noyau pur le prouvait déjà ; ce qui manquait, c'est que l'arrêt
+/// survive au passage par la base — statut distinct persisté, et surtout
+/// RIEN de facturé. « Jamais de dégradation silencieuse » ne vaut que si le
+/// dirigeant peut lire, après coup, que la tâche s'est arrêtée au plafond
+/// et non qu'elle a échoué.
+#[tokio::test]
+async fn the_cost_ceiling_stops_the_task_cleanly_and_bills_nothing() {
+    let Ok(migrate_url) = std::env::var("TEST_MIGRATE_DATABASE_URL") else {
+        eprintln!("IGNORÉ : TEST_MIGRATE_DATABASE_URL absent — exécuté en CI.");
+        return;
+    };
+
+    kollega_store::run_migrations(&migrate_url)
+        .await
+        .expect("migrations");
+    kollega_store::set_app_role_password(&migrate_url, APP_PASSWORD)
+        .await
+        .expect("mot de passe kollega_app");
+
+    let org = Uuid::from_u128(0xCE_111);
+    let mut admin = PgConnection::connect(&migrate_url).await.expect("admin");
+    for table in [
+        "audit_content",
+        "audit_chain",
+        "tool_call_effects",
+        "tasks",
+        "credits",
+        "users",
+    ] {
+        sqlx::query(&format!("DELETE FROM {table} WHERE org_id = $1"))
+            .bind(org)
+            .execute(&mut admin)
+            .await
+            .expect("nettoyage");
+    }
+    sqlx::query("DELETE FROM organizations WHERE id = $1")
+        .bind(org)
+        .execute(&mut admin)
+        .await
+        .expect("nettoyage org");
+
+    let db = kollega_store::Db::connect(&app_url_from(&migrate_url))
+        .await
+        .expect("connexion");
+    let mut tx = db.org_transaction(org).await.expect("tx seed");
+    sqlx::query("INSERT INTO organizations (id, name) VALUES ($1, 'Org Plafond')")
+        .bind(org)
+        .execute(&mut *tx)
+        .await
+        .expect("org");
+    // Crédit LARGE : ce n'est pas l'argent qui manque, c'est le plafond de
+    // la tâche qui borne — les deux protections sont bien distinctes.
+    sqlx::query("INSERT INTO credits (org_id, balance_cents) VALUES ($1, 100000)")
+        .bind(org)
+        .execute(&mut *tx)
+        .await
+        .expect("crédit");
+    tx.commit().await.expect("commit seed");
+
+    let task = Uuid::new_v4();
+    driver::create_task(&db, org, task, Cents(40), 4)
+        .await
+        .expect("création");
+    let step = driver::run_task_step(
+        &db,
+        org,
+        task,
+        &CostlyConclusion { cost: Cents(60) }, // 60 > plafond 40
+        &NoTools,
+        &Vec::new(),
+        None,
+    )
+    .await
+    .expect("le pas aboutit — l'arrêt au plafond n'est pas une erreur");
+
+    assert_eq!(
+        step.status,
+        TaskStatus::AbortedCostCeiling,
+        "arrêt au plafond, DISTINCT d'un échec"
+    );
+    assert_eq!(
+        step.org_balance,
+        Cents(100_000),
+        "un appel refusé au plafond n'est pas facturé"
+    );
+
+    // Le statut est LISIBLE en base : c'est ce que le dirigeant verra.
+    let mut tx = db.org_transaction(org).await.expect("tx lecture");
+    let status: String = sqlx::query("SELECT status FROM tasks WHERE id = $1")
+        .bind(task)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("lecture du statut")
+        .get(0);
+    assert_eq!(
+        status, "aborted_cost_ceiling",
+        "le statut persisté nomme le plafond, il ne dit pas « échec »"
+    );
+}

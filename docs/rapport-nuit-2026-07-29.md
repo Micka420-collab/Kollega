@@ -106,6 +106,19 @@ deux implémentations indépendantes » est donc fondée, pas décorative.
 - Les décisions produit en attente (modèle M4 « relance client », canal
   expert-comptable) — inchangées, elles t'appartiennent.
 
+## 5 bis. La CI a un taux de faux rouges non nul — observé, pas supposé
+
+Run n°39 verte, run n°41 ROUGE sur le job de réversibilité, run n°42 verte
+— **sans qu'aucune migration n'ait changé entre les trois**. L'échec était
+donc transitoire (infrastructure). Deux conséquences à retenir :
+
+- un rouge n'est pas toujours un défaut du code, et le réflexe « la CI est
+  rouge donc j'ai cassé quelque chose » peut faire chercher au mauvais
+  endroit ;
+- le diagnostic publié était VIDE ce jour-là (il ne capturait que les
+  échecs ciblés). Corrigé : l'étape publie désormais l'intégralité de sa
+  sortie. Si cela se reproduit, ce sera lisible.
+
 ## 6. Inquiétudes
 
 - ~~La double attestation lors d'une restauration est détectée mais pas
