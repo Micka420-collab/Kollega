@@ -167,7 +167,9 @@
 >     autres tables.
 > 20. **Les ADR 0003 et 0004 étaient les documents les plus abîmés.**
 >     Titres portant le numéro d'un AUTRE ADR (renumérotation du pivot non
->     répercutée) ; une « table `audit_log` » qui n'a jamais existé (c'est
+>     répercutée) ; une table nommée « audit_log » qui n'a jamais existé —
+>     citée ici sans accents graves, puisqu'ils annoncent un identifiant
+>     réel et qu'une garde le vérifie (c'est
 >     `audit_chain` + `audit_content`) ; et **trois références d'invariant
 >     périmées** de la numérotation v1 — la réversibilité rattachée au 12
 >     au lieu du 13, l'absence d'E/S au 9 au lieu du 11. Les numéros

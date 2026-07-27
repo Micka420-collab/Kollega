@@ -78,6 +78,71 @@ fn looks_like_a_test_name(candidate: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
+/// La matrice suit EXACTEMENT les invariants que la constitution déclare.
+///
+/// `CLAUDE.md` est la seule source des invariants ; la matrice est le seul
+/// endroit qui dit lesquels sont prouvés. Rien ne les reliait : ajouter un
+/// invariant à la constitution sans lui donner sa ligne aurait créé un trou
+/// invisible — un engagement pris, jamais suivi, et une matrice qui
+/// paraîtrait complète parce qu'elle l'est pour les invariants qu'elle
+/// connaît.
+///
+/// La garde LIT `CLAUDE.md` sans jamais l'écrire : la constitution ne se
+/// modifie que par décision du propriétaire.
+#[test]
+fn the_matrix_covers_exactly_the_invariants_of_the_constitution() {
+    let root = repo_root();
+    let constitution = fs::read_to_string(root.join("CLAUDE.md")).expect("CLAUDE.md doit exister");
+
+    // La section des invariants, puis ses items numérotés jusqu'au titre
+    // suivant : le document contient d'autres listes numérotées (« ce qui
+    // nous différencie »), qu'il ne faut pas confondre avec elle.
+    let section = constitution
+        .split("INVARIANTS")
+        .nth(1)
+        .expect("la section des invariants doit exister")
+        .split("\n## ")
+        .next()
+        .expect("fin de section");
+    let declared: BTreeSet<u32> = section
+        .lines()
+        .filter_map(|line| line.split_once(". **"))
+        .filter_map(|(number, _)| number.trim().parse::<u32>().ok())
+        .collect();
+    assert_eq!(
+        declared.len(),
+        13,
+        "la constitution devrait déclarer treize invariants, {} extraits — \
+         l'extraction est cassée, ou la constitution a changé : {declared:?}",
+        declared.len()
+    );
+
+    let matrix = fs::read_to_string(root.join("docs/matrice-invariants.md"))
+        .expect("docs/matrice-invariants.md doit exister");
+    let tracked: BTreeSet<u32> = matrix
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .filter_map(|line| {
+            let cells: Vec<&str> = line.trim_matches('|').split('|').collect();
+            // Le tableau des PREUVES : six colonnes. Les autres tableaux
+            // numérotés de la matrice n'engagent pas la couverture.
+            (cells.len() >= 5).then(|| cells[0].trim().parse::<u32>().ok())?
+        })
+        .collect();
+
+    assert_eq!(
+        tracked,
+        declared,
+        "la matrice ne suit pas exactement les invariants de la constitution. \
+         Manquants dans la matrice : {:?} ; suivis sans exister : {:?}. Un \
+         invariant déclaré et non suivi est un engagement que rien ne \
+         surveille.",
+        declared.difference(&tracked).collect::<Vec<_>>(),
+        tracked.difference(&declared).collect::<Vec<_>>()
+    );
+}
+
 /// Le numéro d'un ADR, dans son titre, est celui de son fichier.
 ///
 /// Deux ADR portaient un titre faux — `0003` s'annonçait « ADR 0002 », et
