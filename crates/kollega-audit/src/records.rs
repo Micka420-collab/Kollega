@@ -215,6 +215,59 @@ mod tests {
         }
     }
 
+    /// Les DEUX motifs d'abandon closent un appel de la même façon.
+    ///
+    /// Trouvé le 29/07 en recensant les variantes qu'aucun test n'atteint :
+    /// l'utilitaire `abandoned` ci-dessus fige `RestartWithUnknownEffect`,
+    /// si bien que `StepReplayAfterChainConflict` n'était jamais passé au
+    /// validateur. Le motif est une INFORMATION pour qui lit le journal ;
+    /// il ne doit rien changer à la sémantique de séquence. Si quelqu'un le
+    /// traitait un jour à part — « un abandon de rejeu ne clôt pas vraiment
+    /// l'appel » —, les deux motifs divergeraient sans qu'aucun rouge ne le
+    /// dise, et un appel clos passerait pour resté ouvert.
+    #[test]
+    fn both_abandon_reasons_close_a_call_identically() {
+        let motifs = [
+            AbandonReason::RestartWithUnknownEffect,
+            AbandonReason::StepReplayAfterChainConflict,
+        ];
+        for reason in motifs {
+            let report = verify_sequence(&[
+                intent(1),
+                AuditRecord::Abandoned {
+                    tool_call_id: id(1),
+                    reason,
+                },
+            ]);
+            assert!(
+                report.is_valid(),
+                "un abandon ({reason:?}) est une clôture LÉGITIME : {report:?}"
+            );
+            assert!(
+                report.open_calls.is_empty(),
+                "l'appel doit être clos par l'abandon ({reason:?}), pas rester ouvert"
+            );
+        }
+        // Et dans l'autre sens : un abandon SANS intention préalable reste
+        // une violation, quel que soit son motif — sinon il suffirait de
+        // choisir le bon motif pour inscrire une clôture orpheline.
+        for reason in motifs {
+            let report = verify_sequence(&[AuditRecord::Abandoned {
+                tool_call_id: id(2),
+                reason,
+            }]);
+            assert_eq!(
+                report.violations.len(),
+                1,
+                "clôture orpheline attendue pour {reason:?} : {report:?}"
+            );
+            assert_eq!(
+                report.violations[0].kind,
+                ViolationKind::ClosureWithoutIntent
+            );
+        }
+    }
+
     #[test]
     fn open_intent_is_information_not_violation() {
         let report = verify_sequence(&[intent(1)]);
