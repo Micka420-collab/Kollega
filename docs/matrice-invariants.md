@@ -17,6 +17,32 @@ conditionne doit le faire par une variable que cette garde couvre — sinon
 un futur test se sauterait à jamais sous une variable non surveillée. Les
 deux gardes sont vérifiées par sabotage, témoin positif compris.
 
+## Sensibilité — quelles preuves ont été vues ÉCHOUER
+
+Un test vert ne prouve rien tant qu'on ne l'a pas vu rouge : il peut
+n'avoir jamais rien vérifié. Cette rubrique dit, invariant par invariant,
+si sa preuve a été **falsifiée volontairement** et si elle a bien rougi.
+C'est une distinction plus dure que la colonne « Exécuté » : un test peut
+avoir tourné mille fois sans jamais pouvoir échouer.
+
+| # | Sabotage joué | Résultat |
+|---|---|---|
+| 1 | Politique `tenant_isolation` de `users` retirée (branche jetable) | CI run 30223419721 **rouge** |
+| 2 | (a) champs de `ExecutionPermit` forgés ; (b) **refus par défaut inversé en autorisation** | (a) le doctest `compile_fail` échoue ; (b) 3 tests rouges dont le proptest `no_matching_rule_always_denies` |
+| 3 | Filtre de tâche retiré du chargement des effets | CI run 30230062721 **rouge** (fuite d'effets entre tâches) |
+| 4 | (a) `DELETE FROM audit_chain` introduit ; (b) `canonical.py` saboté en hexadécimal majuscule ; (c) champs de `ChainedEntry` rendus publics | (a) garde SQL rouge ; (b) run 30230220434 rouge à l'étape du différentiel, **tous les tests Rust verts** — le différentiel est donc bien indépendant ; (c) le `compile_fail` échoue |
+| 5 | **`Budget::refreshed` retiré** de `run_task_step` : la tâche facture contre l'instantané sérialisé | CI run n°68 **rouge** — `A=Succeeded B=Succeeded`, 2 tâches abouties au lieu d'une, 120 dépensés sur un solde de 100 |
+| 6 | `consumed` non mis à jour dans le noyau comptable | 4 tests rouges dont le proptest de conservation |
+| 7 | **Contenu externe concaténé à l'instruction système** dans `compile` | 6 tests rouges dans 3 binaires, dont le corpus hostile cité au README |
+| 11 | (a) `tokio` ajouté au domaine ; (b) `new_v4` appelé dans `ids.rs` | (a) rouge en révélant **tokio, socket2 et mio** ; (b) rouge sur le déterminisme |
+| 12 | **`REVOKE DELETE` sur `users` retiré** de la migration 0006 (branche jetable) | CI run n°65 **rouge** sur ce test seul, message exact, `reversibilite` restée verte |
+| 13 | Migration sans descente, justification trop courte, versions homonymes, descente orpheline | 4 rouges + témoin positif vert (l'irréversibilité justifiée passe bien) |
+
+**Non encore falsifiés** : la commande `audit verify` en CLI et la tranche
+verticale prise dans son ensemble (son test d'idempotence l'a été). Ce
+n'est pas une réserve de principe : ce sont les deux dernières preuves
+dont on ignore encore si elles savent échouer.
+
 | # | Invariant (résumé) | Test | Fichier | Exécuté | Commentaire |
 |---|---|---|---|---|---|
 | 1 | Isolation par la base (RLS) | `tenant_isolation_holds_and_the_test_is_sensitive`, `every_tenant_table_has_forced_rls_and_a_policy`, `in_ci_no_integration_test_may_skip` (protège le « OUI — CI » de cette ligne et de toutes les autres à base réelle) | `kollega-store/tests/rls_isolation.rs`, `rls_structural.rs` | **OUI — CI, 28/07/2026** | **Prouvé, sensibilité comprise** : run 30223145565 verte (politique en place), run 30223419721 ROUGE sur branche jetable avec la politique `tenant_isolation` de `users` retirée — échec à l'étape des tests, fmt/clippy verts. Réserves : les journaux bruts de CI sont inaccessibles sans jeton (impossible de distinguer lequel des deux tests RLS a produit le rouge — les deux détectent la politique manquante) ; la partie « y compris en recherche vectorielle » reste non couverte, aucune table vectorielle n'existe. |

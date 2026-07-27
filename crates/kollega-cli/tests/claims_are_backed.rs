@@ -87,7 +87,14 @@ fn every_test_named_in_the_matrix_actually_exists() {
             continue;
         }
         let cells: Vec<&str> = trimmed.trim_matches('|').split('|').collect();
-        if cells.len() < 3 || cells[0].trim().parse::<u32>().is_err() {
+        // La matrice contient PLUSIEURS tableaux à lignes numérotées (celui
+        // des preuves, celui d'« où vit l'invariant », celui des
+        // sabotages). Seul le premier a une colonne « Test » en 3e
+        // position ; les autres y mettent autre chose, et les lire ferait
+        // prendre un mot comme `compile_fail` pour une fonction disparue.
+        // On les distingue par leur LARGEUR : le tableau des preuves a six
+        // colonnes, les autres deux ou trois.
+        if cells.len() < 5 || cells[0].trim().parse::<u32>().is_err() {
             continue;
         }
         for chunk in cells[2].split('`').skip(1).step_by(2) {
