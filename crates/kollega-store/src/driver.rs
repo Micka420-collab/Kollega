@@ -656,3 +656,65 @@ pub async fn purge_org_content(db: &Db, org_id: Uuid) -> Result<u64, StoreError>
     tx.commit().await?;
     Ok(purged)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Approfondissement (nuit du 28 au 29/07) — première façon dont
+    /// l'idempotence pourrait être FAUSSE sans qu'aucun test ne le voie :
+    /// une dérivation instable. Si l'identité changeait d'un appel à
+    /// l'autre, un rejeu ne reconnaîtrait jamais l'effet précédent et le
+    /// referait — le second mail partirait, en silence.
+    #[test]
+    fn the_derived_identity_is_stable_across_calls() {
+        let task = Uuid::from_u128(0xA11CE);
+        assert_eq!(
+            derive_tool_call_id(task, 3),
+            derive_tool_call_id(task, 3),
+            "la dérivation doit être une FONCTION, pas un tirage"
+        );
+    }
+
+    /// Deuxième façon : une dérivation qui ignorerait la TÂCHE. L'effet
+    /// d'une tâche serait alors attribué à une autre — un appel jamais
+    /// exécuté passerait pour déjà fait, et le mail ne partirait jamais.
+    /// C'est la panne silencieuse la plus coûteuse de tout le dispositif.
+    #[test]
+    fn two_tasks_at_the_same_iteration_never_share_an_identity() {
+        let a = Uuid::from_u128(0xA11CE);
+        let b = Uuid::from_u128(0xB0B);
+        for iteration in [0u32, 1, 7, u32::MAX] {
+            assert_ne!(
+                derive_tool_call_id(a, iteration),
+                derive_tool_call_id(b, iteration),
+                "l'identité doit dépendre de la tâche (itération {iteration})"
+            );
+        }
+    }
+
+    /// Troisième façon : une dérivation qui ignorerait l'ITÉRATION. Le
+    /// deuxième appel d'une même tâche serait pris pour le premier — donc
+    /// jamais exécuté, et son résultat remplacé par celui du précédent.
+    #[test]
+    fn two_iterations_of_one_task_never_share_an_identity() {
+        let task = Uuid::from_u128(0xA11CE);
+        let mut seen = std::collections::BTreeSet::new();
+        for iteration in 0..64u32 {
+            assert!(
+                seen.insert(derive_tool_call_id(task, iteration)),
+                "collision d'identité à l'itération {iteration}"
+            );
+        }
+    }
+
+    /// L'identité dérivée reste un UUID BIEN FORMÉ (version 8, variante
+    /// RFC 4122) : la colonne est de type `uuid`, et un jour un humain
+    /// lira ces valeurs dans un journal.
+    #[test]
+    fn the_derived_identity_is_a_well_formed_uuid() {
+        let id = derive_tool_call_id(Uuid::from_u128(0xA11CE), 0);
+        assert_eq!(id.get_version_num(), 8);
+        assert_eq!(id.get_variant(), uuid::Variant::RFC4122);
+    }
+}

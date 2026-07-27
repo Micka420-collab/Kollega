@@ -449,6 +449,45 @@ async fn the_vertical_slice_goes_through() {
     );
     drop(tx);
 
+    // ---- 6 ter. Les effets ne FUIENT PAS entre tâches -----------------------
+    // La panne silencieuse la plus coûteuse du dispositif : si la mémoire
+    // des effets était chargée sans filtrer sur la tâche, une NOUVELLE
+    // tâche verrait l'effet d'une autre à la même itération, croirait son
+    // appel déjà fait — et le mail ne partirait JAMAIS, sans la moindre
+    // erreur. T3 a un effet à l'itération 0 ; T4 doit exécuter le sien.
+    let t4 = Uuid::new_v4();
+    driver::create_task(&db, org, t4, Cents(500), 8)
+        .await
+        .expect("création T4");
+    driver::run_task_step(
+        &db,
+        org,
+        t4,
+        &relance_script(),
+        &tools,
+        &relance_rules(),
+        None,
+    )
+    .await
+    .expect("T4 suspendue");
+    let before_t4 = tools.count();
+    driver::run_task_step(
+        &db,
+        org,
+        t4,
+        &relance_script(),
+        &tools,
+        &relance_rules(),
+        Some(ApprovalDecision::Approve),
+    )
+    .await
+    .expect("T4 exécute");
+    assert_eq!(
+        tools.count(),
+        before_t4 + 1,
+        "T4 doit exécuter SON appel : l'effet de T3 ne lui appartient pas"
+    );
+
     // ---- 7. Isolation : l'organisation témoin ne voit RIEN -----------------
     let mut tx = db.org_transaction(witness).await.expect("tx témoin");
     let seen: i64 = sqlx::query("SELECT count(*) FROM audit_chain")
