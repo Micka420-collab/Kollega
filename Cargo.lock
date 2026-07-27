@@ -920,11 +920,16 @@ dependencies = [
  "axum",
  "clap",
  "kollega-api",
+ "kollega-core",
+ "kollega-policy",
+ "kollega-runtime",
  "kollega-store",
+ "sqlx",
  "tokio",
  "toml",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

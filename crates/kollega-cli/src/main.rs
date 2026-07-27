@@ -26,8 +26,30 @@ enum Command {
     /// rôle applicatif kollega_app (le secret vient de l'environnement, jamais
     /// d'une migration).
     Migrate,
+    /// Vérifie le journal d'audit d'une organisation (invariant 4).
+    ///
+    /// Deux questions distinctes, posées l'une après l'autre :
+    /// 1. la chaîne a-t-elle été ALTÉRÉE ? (hachages, liens, hauteurs)
+    /// 2. ce qu'elle raconte a-t-il du SENS ? (séquence des appels d'outils)
+    ///
+    /// Sort en code 1 dès qu'une des deux échoue : la commande est faite
+    /// pour être branchée à une supervision, pas seulement lue.
+    Audit {
+        #[command(subcommand)]
+        command: AuditCommand,
+    },
     /// Affiche la version du binaire.
     Version,
+}
+
+#[derive(Subcommand)]
+enum AuditCommand {
+    /// Vérifie la chaîne et la séquence d'une organisation.
+    Verify {
+        /// Organisation à vérifier (UUID).
+        #[arg(long)]
+        org: uuid::Uuid,
+    },
 }
 
 fn env_var(name: &str) -> anyhow::Result<String> {
@@ -68,6 +90,49 @@ async fn main() -> anyhow::Result<()> {
                     .await
                     .context("échec de la mise à jour du mot de passe de kollega_app")?;
                 println!("mot de passe du rôle kollega_app synchronisé");
+            }
+        }
+        Command::Audit {
+            command: AuditCommand::Verify { org },
+        } => {
+            let db = kollega_store::Db::connect(&env_var("DATABASE_URL")?)
+                .await
+                .context("connexion à PostgreSQL impossible")?;
+
+            // 1. Intégrité de la chaîne.
+            match kollega_store::driver::verify_org_chain(&db, org).await {
+                Ok(check) => println!("chaîne : {} entrées, intègre", check.entries),
+                Err(e) => {
+                    // Une rupture n'est pas un plantage : on la NOMME, et on
+                    // sort en échec pour qu'une supervision la voie.
+                    eprintln!("chaîne : ROMPUE — {e}");
+                    std::process::exit(1);
+                }
+            }
+
+            // 2. Cohérence de ce que la chaîne raconte.
+            let report = kollega_store::driver::verify_org_sequence(&db, org)
+                .await
+                .context("lecture de la séquence d'appels impossible")?;
+            if !report.open_calls.is_empty() {
+                // INFORMATION, pas faute : une validation en attente ou un
+                // redémarrage laisse légitimement des appels ouverts.
+                println!("séquence : {} appel(s) ouvert(s)", report.open_calls.len());
+                for call in &report.open_calls {
+                    println!("  ouvert : {call}");
+                }
+            }
+            if report.violations.is_empty() {
+                println!("séquence : cohérente");
+            } else {
+                eprintln!("séquence : {} VIOLATION(S)", report.violations.len());
+                for violation in &report.violations {
+                    eprintln!(
+                        "  position {} — {:?} (appel {})",
+                        violation.position, violation.kind, violation.tool_call_id
+                    );
+                }
+                std::process::exit(1);
             }
         }
         Command::Version => println!("kollega {}", env!("CARGO_PKG_VERSION")),

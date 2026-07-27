@@ -62,6 +62,12 @@ Monolithe modulaire Rust (un binaire, des crates aux frontières nettes) ; Postg
 
 ## Développement
 
+Un exploitant peut vérifier le journal d'une organisation sans nous :
+
+```sh
+kollega audit verify --org <uuid>   # code 0 = intègre, 1 = rompue (message nommé)
+```
+
 ```sh
 cargo test --workspace              # tests purs : passent sans base
 cargo clippy --workspace --all-targets -- -D warnings
