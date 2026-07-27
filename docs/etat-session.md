@@ -247,6 +247,21 @@
 >     `ChainConflict` (il faudrait épuiser les trois rejeux de hauteur) et
 >     `Accounting` (simple report d'une erreur de budget).
 >
+> 27. **Angles neufs, rendement en baisse — dit franchement.** Trois
+>     explorations, une seule trouvaille. (a) Les `.down.sql` défont bien
+>     ce que leurs `.up.sql` font ; la seule asymétrie — `kollega_migrate`
+>     non supprimé — **est justifiée dans le fichier**, comme l'invariant
+>     13 l'exige. (b) `CompiledPrompt` a ses champs publics, si bien que
+>     la garantie de l'invariant 7 vient de `compile` et non du type :
+>     latent, aucun document ne prétend le contraire, consigné dans
+>     `questions-nuit.md` sans être appliqué (modification d'API publique
+>     du domaine). (c) **Trouvaille réelle** : l'ADR-0006 pose trois
+>     plafonds argon2 contre une empreinte empoisonnée, et un seul était
+>     éprouvé. Les itérations sont pourtant un multiplicateur de temps de
+>     calcul aussi direct que la mémoire en est un d'allocation — `t=1000`
+>     immobiliserait un cœur des dizaines de secondes à chaque connexion
+>     sans rien allouer d'anormal, et le plafond mémoire ne l'arrête pas.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
