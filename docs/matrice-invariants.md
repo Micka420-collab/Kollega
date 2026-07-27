@@ -6,6 +6,17 @@ Aucune conclusion flatteuse : un invariant dont le test existe mais n'a
 **jamais tourné** n'est PAS couvert, et c'est écrit tel quel. Colonne
 « Exécuté » = le test a réellement tourné (sur cette machine ou en CI).
 
+**Ce que vaut la colonne « Exécuté » (29/07).** Elle reposait sur une
+confiance : sept tests exigent une base réelle et se sautent sans elle, et
+cette base ne leur était fournie que par *une ligne* de `ci.yml`. La
+retirer aurait rendu sept tests verts en ne prouvant plus rien, et six
+lignes de cette matrice auraient continué d'afficher « OUI — CI » en
+mentant. Depuis, **se sauter en intégration continue est un échec**
+(`kollega-cli/tests/integration_tests_ran.rs`), et tout test qui se
+conditionne doit le faire par une variable que cette garde couvre — sinon
+un futur test se sauterait à jamais sous une variable non surveillée. Les
+deux gardes sont vérifiées par sabotage, témoin positif compris.
+
 | # | Invariant (résumé) | Test | Fichier | Exécuté | Commentaire |
 |---|---|---|---|---|---|
 | 1 | Isolation par la base (RLS) | `tenant_isolation_holds_and_the_test_is_sensitive`, `every_tenant_table_has_forced_rls_and_a_policy` | `kollega-store/tests/rls_isolation.rs`, `rls_structural.rs` | **OUI — CI, 28/07/2026** | **Prouvé, sensibilité comprise** : run 30223145565 verte (politique en place), run 30223419721 ROUGE sur branche jetable avec la politique `tenant_isolation` de `users` retirée — échec à l'étape des tests, fmt/clippy verts. Réserves : les journaux bruts de CI sont inaccessibles sans jeton (impossible de distinguer lequel des deux tests RLS a produit le rouge — les deux détectent la politique manquante) ; la partie « y compris en recherche vectorielle » reste non couverte, aucune table vectorielle n'existe. |
@@ -41,7 +52,7 @@ visible (ADR-0007).
 | 8 | ***prose seulement*** (M2 non commencé) — `ApiKey` expurgée existe déjà pour les clés de modèle |
 | 9 | ***prose seulement*** (M5 non commencé) |
 | 10 | ***prose seulement*** (M6 non commencé) |
-| 11 | **test** (garde du graphe de dépendances, toutes sections) |
+| 11 | **test** (garde du graphe de dépendances : toutes sections des manifestes, **plus la fermeture transitive du graphe résolu**, plus l'interdiction d'entropie et d'horloge dans le domaine) |
 | 12 | **contrainte de schéma** (aucun GRANT DELETE sur les six tables tenant depuis 0006 ; seul le contenu purgeable en garde un) + **test** — restent en *prose seulement* : l'effacement logique et l'export RGPD |
 | 13 | **test** (job CI `reversibilite` : down rend le vierge, re-up reproduit) |
 
