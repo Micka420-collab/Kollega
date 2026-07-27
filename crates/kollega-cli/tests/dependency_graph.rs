@@ -110,6 +110,148 @@ fn dependency_names(manifest: &toml::Value, section: &str) -> BTreeSet<String> {
     out
 }
 
+/// Crates d'ENTRÉE-SORTIE : réseau, fichiers, base, exécuteur async.
+///
+/// Leur présence dans la fermeture TRANSITIVE de `kollega-core` violerait
+/// l'invariant 11, même si le manifeste du domaine reste impeccable.
+///
+/// `getrandom` n'y figure PAS, et c'est un jugement assumé : il fournit de
+/// l'entropie (un appel système), pas de l'entrée-sortie au sens du
+/// produit — et il n'est présent que parce que la PÉRIPHÉRIE utilise
+/// `uuid` v4, l'unification des features de cargo le propageant à tout le
+/// graphe. Le domaine, lui, ne déclare pas v4 et n'appelle jamais
+/// `new_v4` (garde textuelle ci-dessous).
+const IO_CRATES: &[&str] = &[
+    "tokio",
+    "sqlx",
+    "sqlx-core",
+    "sqlx-postgres",
+    "reqwest",
+    "hyper",
+    "mio",
+    "socket2",
+    "async-std",
+    "smol",
+    "rusqlite",
+    "native-tls",
+    "openssl",
+    "curl",
+];
+
+/// Fermeture transitive des dépendances NORMALES, lue dans le graphe
+/// RÉSOLU (`Cargo.lock`) — et non dans les manifestes.
+///
+/// C'était une dette notée au backlog le 26/07 : le contrôle des
+/// manifestes ne voit que ce qui est DÉCLARÉ. Une dépendance d'E/S
+/// arrivant par transitivité — `kollega-core` → une crate anodine → tokio —
+/// serait passée inaperçue, et l'invariant 11 aurait été « prouvé » par un
+/// test aveugle à ce chemin.
+///
+/// Les dev-dependencies sont hors sujet ici : elles n'entrent pas dans
+/// l'artefact livré (`proptest` est pur, mais ses propres dépendances ne
+/// regardent pas le domaine).
+#[test]
+fn core_transitive_closure_contains_no_io_crate() {
+    let root = crates_dir().parent().expect("racine").to_path_buf();
+    let lock: toml::Value = fs::read_to_string(root.join("Cargo.lock"))
+        .expect("Cargo.lock doit exister")
+        .parse()
+        .expect("Cargo.lock illisible");
+
+    let packages = lock["package"].as_array().expect("liste des paquets");
+    let mut deps_of: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for package in packages {
+        let name = package["name"].as_str().expect("nom de paquet").to_owned();
+        let deps = package
+            .get("dependencies")
+            .and_then(|d| d.as_array())
+            .map(|list| {
+                list.iter()
+                    .filter_map(|d| d.as_str())
+                    // Une entrée peut valoir « nom version (source) ».
+                    .map(|d| d.split_whitespace().next().unwrap_or(d).to_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        deps_of.insert(name, deps);
+    }
+
+    // Point de départ : les dépendances NORMALES déclarées par le domaine.
+    let manifest: toml::Value = fs::read_to_string(crates_dir().join("kollega-core/Cargo.toml"))
+        .expect("manifeste du domaine")
+        .parse()
+        .expect("TOML invalide");
+    let mut queue: Vec<String> = dependency_names(&manifest, "dependencies")
+        .into_iter()
+        .collect();
+    assert!(!queue.is_empty(), "extraction suspecte : aucune dépendance");
+
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut found_io: Vec<String> = Vec::new();
+    while let Some(name) = queue.pop() {
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        if IO_CRATES.contains(&name.as_str()) {
+            found_io.push(name.clone());
+        }
+        if let Some(children) = deps_of.get(&name) {
+            queue.extend(children.iter().cloned());
+        }
+    }
+    assert!(
+        found_io.is_empty(),
+        "invariant 11 violé par TRANSITIVITÉ : kollega-core atteint {found_io:?} \
+         à travers le graphe résolu, alors que son manifeste paraît propre"
+    );
+    assert!(
+        seen.len() > 5,
+        "fermeture suspecte : seulement {} crates atteintes",
+        seen.len()
+    );
+}
+
+/// Le domaine ne tire jamais d'entropie lui-même.
+///
+/// `uuid` v4 est activé par la PÉRIPHÉRIE, et l'unification des features de
+/// cargo le rend visible partout : le compilateur ne défendrait donc pas
+/// cette frontière. Un identifiant fabriqué dans le domaine le rendrait
+/// non déterministe — et casserait la reprise, qui repose sur des valeurs
+/// dérivables.
+#[test]
+fn the_domain_never_draws_randomness() {
+    let mut sources = Vec::new();
+    let core = crates_dir().join("kollega-core/src");
+    fn collect(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+    collect(&core, &mut sources);
+    assert!(!sources.is_empty(), "balayage suspect");
+
+    for path in &sources {
+        let content = fs::read_to_string(path).expect("lecture");
+        for forbidden in ["new_v4", "getrandom", "thread_rng", "SystemTime::now"] {
+            assert!(
+                !content.contains(forbidden),
+                "{} appelle {forbidden} : le domaine doit rester DÉTERMINISTE \
+                 (la reprise en dépend)",
+                path.display()
+            );
+        }
+    }
+}
+
 #[test]
 fn dependency_graph_is_respected() {
     let mut seen = 0;
