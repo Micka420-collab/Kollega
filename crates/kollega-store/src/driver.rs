@@ -27,7 +27,7 @@
 //! la boucle. L'adaptateur [`RulesPolicy`] délègue au vrai moteur, mais sur
 //! une requête réduite au nom.
 
-use kollega_audit::chain::{ChainedEntry, EntryContent, Hash32, OrgChain};
+use kollega_audit::chain::{EntryContent, Hash32, OrgChain, StoredEntry};
 use kollega_audit::CanonicalValue;
 use kollega_core::{Cents, Decision, OrgId, TaskStatus};
 use kollega_policy::{decide, ToolCallRequest, ToolRule};
@@ -537,7 +537,10 @@ pub async fn verify_org_chain(db: &Db, org_id: Uuid) -> Result<ChainCheck, Store
             Some(d) => hex::encode(to32(d)?),
             None => String::new(),
         };
-        entries.push(ChainedEntry {
+        // StoredEntry, pas ChainedEntry : ce qu'on relit du stockage peut
+        // MENTIR — c'est précisément ce que la vérification est là pour
+        // dénoncer. Le type produit par le domaine, lui, ne peut pas.
+        entries.push(StoredEntry {
             content: EntryContent {
                 actor: row.get(3),
                 action: row.get(4),

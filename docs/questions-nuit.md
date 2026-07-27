@@ -13,8 +13,14 @@ dénoncer — la corruption devient inreprésentable au lieu d'être détectée.
 C'est exactement ce que fait `verify_org_chain` : il relit des empreintes
 brutes et les confronte au recalcul.
 
-**Option recommandée (non appliquée — c'est une décision d'API du
-domaine) : deux types au lieu d'un.**
+**APPLIQUÉE** dans la nuit, sur autorisation explicite du propriétaire
+(« tu peux le refondre si besoin, mais vérifie ce que tu fais ») — et
+vérifiée par sabotage : rendre les champs publics fait ÉCHOUER le doctest
+`compile_fail` avec « Test compiled successfully, but it's marked
+compile_fail », donc le test prouve bien l'impossibilité de forger et non
+un accident de compilation.
+
+**Deux types au lieu d'un.**
 
 - `ChainedEntry` — PRODUITE par `OrgChain::append`, empreinte privée +
   méthode : cohérente par construction, personne ne peut en forger une qui

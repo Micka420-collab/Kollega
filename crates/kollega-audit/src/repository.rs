@@ -13,7 +13,7 @@
 
 #![allow(async_fn_in_trait)] // contrats internes : pas de bornes d'envoi à figer ici
 
-use crate::chain::ChainedEntry;
+use crate::chain::StoredEntry;
 use crate::content::{AuditContent, ContentDigest, ContentPayload};
 
 /// Dépôt de la chaîne d'attestations — AJOUT SEUL, par construction.
@@ -31,7 +31,10 @@ pub trait AuditChainRepository {
     ) -> Result<(), Self::Error>;
 
     /// Relit la chaîne entière de l'organisation, ordonnée par hauteur.
-    async fn read(&mut self) -> Result<Vec<ChainedEntry>, Self::Error>;
+    ///
+    /// Rend des [`StoredEntry`] : ce qui sort du stockage n'est pas une
+    /// preuve, c'est une prétention — à soumettre à `OrgChain::verify`.
+    async fn read(&mut self) -> Result<Vec<StoredEntry>, Self::Error>;
 }
 
 /// Dépôt du contenu d'audit — adressé par `(organisation, empreinte)`.

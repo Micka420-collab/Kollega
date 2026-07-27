@@ -6,7 +6,8 @@
 
 use std::collections::BTreeMap;
 
-use kollega_audit::{CanonicalValue, ChainBreakKind, ChainedEntry, EntryContent, OrgChain};
+use kollega_audit::chain::StoredEntry;
+use kollega_audit::{CanonicalValue, ChainBreakKind, EntryContent, OrgChain};
 use kollega_core::OrgId;
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -26,10 +27,15 @@ fn content(i: i64) -> EntryContent {
     }
 }
 
-fn build(c: &OrgChain, n: usize) -> Vec<ChainedEntry> {
-    let mut entries = Vec::new();
+/// Chaîne saine, rendue sous sa forme STOCKÉE — la seule que ces tests
+/// puissent trafiquer, et c'est le but : une entrée PRODUITE ne peut pas
+/// mentir, une entrée RELUE le peut, et c'est elle que `verify` dénonce.
+fn build(c: &OrgChain, n: usize) -> Vec<StoredEntry> {
+    let mut entries: Vec<StoredEntry> = Vec::new();
     for i in 0..n as i64 {
-        let next = c.append(entries.last(), content(i));
+        let next: StoredEntry = c
+            .append(entries.last().map(StoredEntry::tip), content(i))
+            .into();
         entries.push(next);
     }
     entries
@@ -95,7 +101,9 @@ proptest! {
         let c = chain();
         let mut entries = build(&c, n);
         let i = (seed as usize) % n; // 0..=n-1 : jamais après la dernière
-        let intruder = c.append(entries.get(i.saturating_sub(1)), content(999));
+        let intruder: StoredEntry = c
+            .append(entries.get(i.saturating_sub(1)).map(StoredEntry::tip), content(999))
+            .into();
         entries.insert(i, intruder);
         prop_assert!(c.verify(&entries).is_err());
     }

@@ -15,7 +15,7 @@
 
 use kollega_core::OrgId;
 
-use crate::chain::{ChainBreak, ChainedEntry, Hash32, OrgChain};
+use crate::chain::{ChainBreak, Hash32, OrgChain, StoredEntry};
 
 /// Photographie ancrée de la tête d'une chaîne.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,7 +61,7 @@ pub enum AnchorViolation {
 impl OrgChain {
     /// Ancre de la tête actuelle de `entries` (None si la chaîne est vide).
     #[must_use]
-    pub fn head_anchor(&self, entries: &[ChainedEntry], anchored_at_micros: i64) -> Option<Anchor> {
+    pub fn head_anchor(&self, entries: &[StoredEntry], anchored_at_micros: i64) -> Option<Anchor> {
         entries.last().map(|tail| Anchor {
             org_id: self.org_id(),
             height: tail.height,
@@ -78,7 +78,7 @@ impl OrgChain {
     /// par la cohérence interne — voir la limite documentée du module.
     pub fn verify_with_anchor(
         &self,
-        entries: &[ChainedEntry],
+        entries: &[StoredEntry],
         anchor: &Anchor,
     ) -> Result<(), AnchorViolation> {
         if anchor.org_id != self.org_id() {
@@ -193,10 +193,12 @@ mod tests {
         }
     }
 
-    fn build(c: &OrgChain, n: i64) -> Vec<crate::chain::ChainedEntry> {
+    fn build(c: &OrgChain, n: i64) -> Vec<StoredEntry> {
         let mut entries = Vec::new();
         for i in 0..n {
-            let next = c.append(entries.last(), content(i));
+            let next: StoredEntry = c
+                .append(entries.last().map(StoredEntry::tip), content(i))
+                .into();
             entries.push(next);
         }
         entries
@@ -217,7 +219,9 @@ mod tests {
         let mut entries = build(&c, 3);
         let anchor = c.head_anchor(&entries, 1).unwrap();
         for i in 3..6 {
-            let next = c.append(entries.last(), content(i));
+            let next: StoredEntry = c
+                .append(entries.last().map(StoredEntry::tip), content(i))
+                .into();
             entries.push(next);
         }
         assert_eq!(c.verify_with_anchor(&entries, &anchor), Ok(()));
@@ -252,10 +256,14 @@ mod tests {
         let mut forged: Vec<_> = entries[..2].to_vec();
         let mut altered = content(2);
         altered.actor = "attaquant".to_owned();
-        let next = c.append(forged.last(), altered);
+        let next: StoredEntry = c
+            .append(forged.last().map(StoredEntry::tip), altered)
+            .into();
         forged.push(next);
         for i in 3..5 {
-            let next = c.append(forged.last(), content(i));
+            let next: StoredEntry = c
+                .append(forged.last().map(StoredEntry::tip), content(i))
+                .into();
             forged.push(next);
         }
         assert_eq!(
@@ -277,13 +285,17 @@ mod tests {
         let c = chain(0xA);
         let mut entries = build(&c, 3);
         let anchor = c.head_anchor(&entries, 1).unwrap(); // hauteur 2
-        let next = c.append(entries.last(), content(3));
+        let next: StoredEntry = c
+            .append(entries.last().map(StoredEntry::tip), content(3))
+            .into();
         entries.push(next);
 
         let mut forged: Vec<_> = entries[..3].to_vec();
         let mut altered = content(99);
         altered.actor = "attaquant".to_owned();
-        let next = c.append(forged.last(), altered);
+        let next: StoredEntry = c
+            .append(forged.last().map(StoredEntry::tip), altered)
+            .into();
         forged.push(next);
 
         assert_eq!(

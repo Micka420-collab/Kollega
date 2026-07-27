@@ -44,19 +44,141 @@ pub struct EntryContent {
     pub timestamp_micros: i64,
 }
 
-/// Entrée chaînée : contenu + position + lien vers la précédente + empreinte.
+/// Queue d'une chaîne : de quoi enchaîner l'entrée suivante.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChainTip {
+    /// Hauteur de la dernière entrée.
+    pub height: u64,
+    /// Empreinte de la dernière entrée.
+    pub hash: Hash32,
+}
+
+/// Entrée chaînée **PRODUITE** par [`OrgChain::append`] — porteuse de preuve.
+///
+/// Champs PRIVÉS et aucun constructeur public : la seule façon d'obtenir une
+/// valeur de ce type est de la faire CALCULER par `append`. Une entrée dont
+/// l'empreinte ne correspondrait pas à son contenu n'est donc pas
+/// représentable ici — le domaine ne peut pas forger d'entrée mensongère,
+/// même par accident.
+///
+/// Ce que ce type n'est PAS : la forme relue du stockage. Une base corrompue
+/// contient des entrées dont l'empreinte ment, et il faut pouvoir les
+/// représenter pour les DÉNONCER — c'est le rôle de [`StoredEntry`].
+///
+/// Forger une entrée dont l'empreinte ne correspond pas à son contenu ne
+/// COMPILE PAS — les champs sont privés et il n'existe aucun constructeur
+/// public :
+///
+/// ```compile_fail
+/// use kollega_audit::chain::{ChainedEntry, EntryContent, Hash32};
+/// use kollega_audit::CanonicalValue;
+/// let mensonge = ChainedEntry {
+///     content: EntryContent {
+///         actor: "moi".to_owned(),
+///         action: "rien".to_owned(),
+///         payload: CanonicalValue::Null,
+///         timestamp_micros: 0,
+///     },
+///     height: 0,
+///     prev_hash: None,
+///     hash: Hash32([0u8; 32]), // empreinte arbitraire : refusé à la compilation
+/// };
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChainedEntry {
+    content: EntryContent,
+    height: u64,
+    prev_hash: Option<Hash32>,
+    hash: Hash32,
+}
+
+impl ChainedEntry {
     /// Le contenu haché.
-    pub content: EntryContent,
+    #[must_use]
+    pub fn content(&self) -> &EntryContent {
+        &self.content
+    }
+
     /// Hauteur dans la chaîne (0 pour la première entrée). Incluse dans les
     /// octets hachés : une entrée déplacée ou rejouée à une autre position
     /// invalide la chaîne même si tout le reste est cohérent.
-    pub height: u64,
+    #[must_use]
+    pub fn height(&self) -> u64 {
+        self.height
+    }
+
     /// Empreinte de l'entrée précédente ; `None` pour la première.
+    #[must_use]
+    pub fn prev_hash(&self) -> Option<&Hash32> {
+        self.prev_hash.as_ref()
+    }
+
+    /// Empreinte de cette entrée — VRAIE par construction.
+    #[must_use]
+    pub fn hash(&self) -> Hash32 {
+        self.hash
+    }
+
+    /// Queue à passer au prochain [`OrgChain::append`].
+    #[must_use]
+    pub fn tip(&self) -> ChainTip {
+        ChainTip {
+            height: self.height,
+            hash: self.hash,
+        }
+    }
+}
+
+/// Entrée **RELUE DU STOCKAGE** — sa cohérence n'est pas garantie.
+///
+/// C'est volontairement une structure à champs publics : le stockage peut
+/// contenir n'importe quoi (altération, réordonnancement, empreinte
+/// falsifiée), et une chaîne corrompue DOIT être représentable, sinon
+/// [`OrgChain::verify`] n'aurait rien à dénoncer. Rendre la corruption
+/// inreprésentable la rendrait indétectable — c'est l'inverse du but.
+///
+/// La distinction porte donc la vraie règle : **le domaine ne peut produire
+/// que des entrées vraies ([`ChainedEntry`]) ; seule la frontière de
+/// stockage peut en représenter de fausses, et uniquement pour les soumettre
+/// à la vérification.**
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredEntry {
+    /// Le contenu tel qu'il a été relu.
+    pub content: EntryContent,
+    /// La hauteur telle qu'elle a été relue.
+    pub height: u64,
+    /// Le lien tel qu'il a été relu.
     pub prev_hash: Option<Hash32>,
-    /// Empreinte de cette entrée.
+    /// L'empreinte telle qu'elle a été relue — potentiellement MENSONGÈRE.
     pub hash: Hash32,
+}
+
+impl StoredEntry {
+    /// Queue à passer au prochain [`OrgChain::append`].
+    ///
+    /// C'est le chemin normal en production : la queue vient de la base.
+    /// Enchaîner sur une queue relue est sûr — si elle mentait, la
+    /// vérification de la chaîne le dirait.
+    #[must_use]
+    pub fn tip(&self) -> ChainTip {
+        ChainTip {
+            height: self.height,
+            hash: self.hash,
+        }
+    }
+}
+
+impl From<ChainedEntry> for StoredEntry {
+    /// Une entrée produite est trivialement stockable — dans ce sens, jamais
+    /// dans l'autre : on ne « promeut » pas une entrée relue en preuve.
+    fn from(entry: ChainedEntry) -> Self {
+        StoredEntry {
+            content: entry.content,
+            height: entry.height,
+            prev_hash: entry.prev_hash,
+            hash: entry.hash,
+        }
+    }
 }
 
 /// Nature d'une rupture de chaîne.
@@ -153,11 +275,16 @@ impl OrgChain {
         Hash32(hasher.finalize().into())
     }
 
-    /// Chaîne une nouvelle entrée après `tail` (la dernière entrée, ou
-    /// `None` si la chaîne est vide) : la hauteur et le lien en découlent.
+    /// Chaîne une nouvelle entrée après `tip` (la queue de la chaîne, ou
+    /// `None` si elle est vide) : la hauteur et le lien en découlent.
+    ///
+    /// SEUL constructeur d'une [`ChainedEntry`] : toute entrée produite par
+    /// le domaine porte donc une empreinte vraie. La queue peut venir d'une
+    /// entrée produite ([`ChainedEntry::tip`]) ou relue
+    /// ([`StoredEntry::tip`]) — le chemin de production réel.
     #[must_use]
-    pub fn append(&self, tail: Option<&ChainedEntry>, content: EntryContent) -> ChainedEntry {
-        let (height, prev_hash) = match tail {
+    pub fn append(&self, tip: Option<ChainTip>, content: EntryContent) -> ChainedEntry {
+        let (height, prev_hash) = match tip {
             None => (0, None),
             Some(previous) => (previous.height + 1, Some(previous.hash)),
         };
@@ -181,7 +308,7 @@ impl OrgChain {
     /// attaquant en écriture passent cette vérification. Contre ces deux
     /// classes, utiliser [`OrgChain::verify_with_tail`] avec une ancre de
     /// confiance externe.
-    pub fn verify(&self, entries: &[ChainedEntry]) -> Result<(), ChainBreak> {
+    pub fn verify(&self, entries: &[StoredEntry]) -> Result<(), ChainBreak> {
         let mut expected_prev: Option<Hash32> = None;
         for (position, entry) in entries.iter().enumerate() {
             // La hauteur stockée doit être la position réelle : une entrée
@@ -222,7 +349,7 @@ impl OrgChain {
     /// manque), de nature [`ChainBreakKind::TailMismatch`].
     pub fn verify_with_tail(
         &self,
-        entries: &[ChainedEntry],
+        entries: &[StoredEntry],
         trusted_tail: Option<&Hash32>,
     ) -> Result<(), ChainBreak> {
         self.verify(entries)?;
@@ -258,13 +385,42 @@ mod tests {
         }
     }
 
-    fn build(chain: &OrgChain, n: i64) -> Vec<ChainedEntry> {
-        let mut entries: Vec<ChainedEntry> = Vec::new();
+    /// Construit une chaîne SAINE puis la rend sous sa forme STOCKÉE : les
+    /// tests de corruption ont besoin de pouvoir la trafiquer, ce que le
+    /// type produit interdit — c'est exactement la séparation voulue.
+    fn build(chain: &OrgChain, n: i64) -> Vec<StoredEntry> {
+        let mut entries: Vec<StoredEntry> = Vec::new();
         for i in 0..n {
-            let next = chain.append(entries.last(), content(i));
+            let next: StoredEntry = chain
+                .append(entries.last().map(StoredEntry::tip), content(i))
+                .into();
             entries.push(next);
         }
         entries
+    }
+
+    #[test]
+    fn a_produced_entry_always_tells_the_truth_a_stored_one_may_lie() {
+        let chain = chain_a();
+        // PRODUITE : l'empreinte est calculée, elle correspond forcément.
+        let produced = chain.append(None, content(0));
+        assert_eq!(
+            produced.hash(),
+            chain.entry_hash(produced.height(), produced.prev_hash(), produced.content()),
+            "une entrée produite ne peut pas mentir"
+        );
+        // STOCKÉE : on PEUT en fabriquer une qui ment — et c'est nécessaire,
+        // sinon une base corrompue serait inreprésentable donc indétectable.
+        let mut stored: StoredEntry = produced.into();
+        stored.hash = Hash32([0u8; 32]);
+        assert_eq!(
+            chain.verify(std::slice::from_ref(&stored)),
+            Err(ChainBreak {
+                position: 0,
+                kind: ChainBreakKind::AlteredEntry,
+            }),
+            "et la vérification la dénonce : c'est tout l'intérêt de pouvoir la représenter"
+        );
     }
 
     #[test]
@@ -465,13 +621,17 @@ mod tests {
         let entries = build(&chain, 5);
         let anchor = entries.last().map(|e| e.hash);
 
-        let mut forged: Vec<ChainedEntry> = entries[..2].to_vec();
+        let mut forged: Vec<StoredEntry> = entries[..2].to_vec();
         let mut altered = content(2);
         altered.actor = "attaquant".to_owned();
-        let next = chain.append(forged.last(), altered);
+        let next: StoredEntry = chain
+            .append(forged.last().map(StoredEntry::tip), altered)
+            .into();
         forged.push(next);
         for i in 3..5 {
-            let next = chain.append(forged.last(), content(i));
+            let next: StoredEntry = chain
+                .append(forged.last().map(StoredEntry::tip), content(i))
+                .into();
             forged.push(next);
         }
 
