@@ -260,13 +260,48 @@ pub async fn run_task_step(
     approval: Option<ApprovalDecision>,
 ) -> Result<SliceStep, StoreError> {
     let mut last = StoreError::ChainConflict;
-    for _ in 0..CHAIN_RETRIES {
+    for attempt in 0..CHAIN_RETRIES {
         match try_task_step(db, org_id, task_id, model, tools, rules, approval).await {
-            Err(StoreError::ChainConflict) => last = StoreError::ChainConflict,
+            Err(StoreError::ChainConflict) => {
+                // Le pas perdu a PU exécuter des effets (outil, modèle)
+                // avant l'annulation de sa transaction : son effet réel est
+                // INCONNU. On l'atteste en ABANDON — jamais en échec, ce
+                // serait un mensonge dans la chaîne (bloc 3d) — puis on
+                // rejoue le pas.
+                attest_step_abandoned(db, org_id, task_id, attempt).await?;
+                last = StoreError::ChainConflict;
+            }
             other => return other,
         }
     }
     Err(last)
+}
+
+/// Atteste l'abandon d'un pas rejoué (effet réel inconnu) — bloc 3d branché
+/// sur le chemin de reprise réel : le rejeu après conflit de chaîne.
+async fn attest_step_abandoned(
+    db: &Db,
+    org_id: Uuid,
+    task_id: Uuid,
+    attempt: u32,
+) -> Result<(), StoreError> {
+    let content =
+        format!("{{\"reason\":\"step_replay_after_chain_conflict\",\"attempt\":{attempt}}}");
+    let actor = task_id.to_string();
+    // L'attestation d'abandon peut elle-même perdre la course à la hauteur :
+    // bornée aux mêmes rejeux que le pas.
+    for _ in 0..CHAIN_RETRIES {
+        let mut tx = db.org_transaction(org_id).await?;
+        match append_attestation(&mut tx, org_id, &actor, "step_abandoned", &content).await {
+            Ok(()) => {
+                tx.commit().await?;
+                return Ok(());
+            }
+            Err(StoreError::ChainConflict) => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(StoreError::ChainConflict)
 }
 
 async fn try_task_step(
