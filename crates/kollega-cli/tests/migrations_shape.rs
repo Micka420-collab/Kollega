@@ -90,9 +90,30 @@ fn every_migration_is_reversible_or_says_why_not() {
             continue;
         }
         let content = fs::read_to_string(path).expect("lecture d'une migration");
-        let justification = content
-            .split_once(IRREVERSIBLE)
-            .map(|(_, rest)| rest.chars().filter(|c| !c.is_whitespace()).count());
+        let justification = content.split_once(IRREVERSIBLE).map(|(_, rest)| {
+            // La justification est le BLOC DE COMMENTAIRE qui suit le
+            // marqueur, pas le reste du fichier. Compter tout ce qui suit
+            // laissait le SQL lui-même faire office de justification : dix
+            // lignes de DDL et le marqueur passait, ce qui vidait la règle
+            // de son sens. Défaut trouvé en relisant cette garde.
+            let mut lines = rest.lines();
+            let mut counted: usize = lines
+                .next()
+                .map(|first| first.chars().filter(|c| !c.is_whitespace()).count())
+                .unwrap_or(0);
+            for line in lines {
+                let trimmed = line.trim_start();
+                if !trimmed.starts_with("--") {
+                    break;
+                }
+                counted += trimmed
+                    .trim_start_matches('-')
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .count();
+            }
+            counted
+        });
         match justification {
             Some(len) if len >= MIN_JUSTIFICATION => {}
             Some(len) => faults.push(format!(
