@@ -41,6 +41,26 @@
 >    Toute la chaîne de livraison portait donc sur un binaire dont
 >    personne n'avait vérifié que sa commande par défaut savait se lever.
 >
+> 7. **Le job de réversibilité ne comparait les privilèges NULLE PART.**
+>    `pg_dump --no-privileges` les retire du schéma, et la comparaison
+>    d'ACL ne portait que sur le schéma `public`. Or les `GRANT`/`REVOKE`
+>    par table sont le mécanisme *même* de l'invariant 12 : une migration
+>    qui accordait un privilège sans le reprendre à la descente passait
+>    verte. Corrigé, run n°63 verte.
+> 8. **Invariant 12 : la sensibilité est enfin prouvée** (run n°65 rouge).
+>    `no_physical_deletion` était sa seule preuve et n'avait jamais été vue
+>    échouer. Branche jetable, `REVOKE DELETE` sur `users` retiré de la
+>    migration 0006 : `verifications` rouge sur ce test **seul**, message
+>    exact attendu, `reversibilite` restée verte. Branche supprimée des
+>    deux côtés. **Toutes les gardes textuelles du dépôt ont désormais été
+>    observées en échec** — aucune n'est un vert de principe.
+> 9. **Marque d'ordre d'octets interdite.** J'avais moi-même introduit un
+>    BOM dans `ci.yml` via `Set-Content -Encoding utf8` ; GitHub l'a
+>    toléré. Dans un `.sql` joué par psql, la même marque fait échouer la
+>    migration sur une erreur de syntaxe illisible — une production qui ne
+>    démarre pas. La garde a rougi sur ce défaut réel dès sa première
+>    exécution, sans sabotage artificiel.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
