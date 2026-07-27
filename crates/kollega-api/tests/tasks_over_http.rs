@@ -127,7 +127,7 @@ async fn a_task_is_written_and_read_back_through_http_and_never_across_orgs() {
     }
 
     // Le VRAI routeur du produit, pas un montage de test.
-    let app = kollega_api::router(db);
+    let app = kollega_api::router(db, None);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("écoute");

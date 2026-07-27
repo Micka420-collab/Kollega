@@ -103,7 +103,12 @@ async fn main() -> anyhow::Result<()> {
             let db = kollega_store::Db::connect(&env_var("DATABASE_URL")?)
                 .await
                 .context("connexion à PostgreSQL impossible")?;
-            let app = kollega_api::router(db);
+            // Aucun agent branché : la décision du `ModelProvider` réel
+            // appartient au propriétaire (docs/questions-nuit.md). La route
+            // de pas existe et répond 503 — un serveur qui dit ce qu'il ne
+            // sait pas faire, plutôt qu'un modèle de démonstration qui
+            // ferait croire le contraire.
+            let app = kollega_api::router(db, None);
             let listener = tokio::net::TcpListener::bind(&listen)
                 .await
                 .with_context(|| format!("impossible d'écouter sur {listen}"))?;

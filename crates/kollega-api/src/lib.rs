@@ -1,4 +1,5 @@
-//! Couche HTTP (axum). Au jalon M0 : `GET /health`, rien d'autre.
+//! Couche HTTP (axum) : `GET /health`, création et lecture d'une tâche, et
+//! le PAS qui la fait avancer.
 //!
 //! L'accès aux données passe exclusivement par `kollega_store::Db` — le point
 //! de passage unique qui pose le contexte d'organisation (invariant 1).
@@ -7,18 +8,165 @@
 
 pub mod auth;
 
-use axum::extract::{Path, State};
+use std::sync::Arc;
+
+use axum::extract::{FromRef, Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::Router;
-use kollega_store::Db;
+use axum::{Json, Router};
+use kollega_policy::ToolRule;
+use kollega_runtime::machine::{ApprovalDecision, ModelProvider, ToolRunner};
+use kollega_store::{Db, StoreError};
+
+/// Ce qu'il faut au serveur pour faire AVANCER une tâche : un fournisseur de
+/// plan, un exécuteur d'outils, et les règles de l'organisation.
+///
+/// Les trois sont injectés, jamais construits ici. C'est la même méthode que
+/// l'attente d'arrêt de [`serve_until`] : le chemin exercé par un test est
+/// exactement celui qu'emprunte le binaire, seule la pièce branchée au bout
+/// change.
+///
+/// # Pourquoi c'est une OPTION dans l'état du serveur
+///
+/// Quel `ModelProvider` réel brancher — et comment la boucle recevra
+/// l'estimation de jetons que `ModelRequest` porte déjà — engage la
+/// conception de la boucle d'agent, et appartient au propriétaire
+/// (`docs/questions-nuit.md`). Tant que cette décision n'est pas prise, le
+/// binaire démarre SANS agent et la route de pas répond `503`. Câbler ici un
+/// modèle de démonstration donnerait un serveur qui a l'air de fonctionner en
+/// produisant des plans qui ne viennent d'aucun modèle : c'est exactement le
+/// genre de vert trompeur que ce dépôt refuse.
+#[derive(Clone)]
+pub struct Agent {
+    model: Arc<dyn ModelProvider + Send + Sync>,
+    tools: Arc<dyn ToolRunner + Send + Sync>,
+    rules: Arc<[ToolRule]>,
+}
+
+impl Agent {
+    /// Assemble un agent à partir de ses trois pièces.
+    #[must_use]
+    pub fn new(
+        model: Arc<dyn ModelProvider + Send + Sync>,
+        tools: Arc<dyn ToolRunner + Send + Sync>,
+        rules: Vec<ToolRule>,
+    ) -> Self {
+        Agent {
+            model,
+            tools,
+            rules: rules.into(),
+        }
+    }
+}
+
+/// État partagé du serveur.
+#[derive(Clone)]
+struct AppState {
+    db: Db,
+    agent: Option<Agent>,
+}
+
+// Les handlers qui ne touchent qu'à la base continuent d'extraire `Db` seul :
+// ils n'ont aucune raison de voir l'agent.
+impl FromRef<AppState> for Db {
+    fn from_ref(state: &AppState) -> Db {
+        state.db.clone()
+    }
+}
 
 /// Construit le routeur HTTP de l'application.
-pub fn router(db: Db) -> Router {
+///
+/// `agent` vaut `None` tant qu'aucun fournisseur de modèle n'est branché : la
+/// route de pas existe alors quand même et répond `503`. Le routeur est le
+/// même dans les deux cas — un test exerce donc le routeur du produit, pas un
+/// montage parallèle.
+pub fn router(db: Db, agent: Option<Agent>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/orgs/{org}/tasks/{task}", post(create_task).get(read_task))
-        .with_state(db)
+        .route("/orgs/{org}/tasks/{task}/steps", post(advance_task))
+        .with_state(AppState { db, agent })
+}
+
+/// Corps d'une demande de pas : la décision humaine, s'il y en a une.
+#[derive(serde::Deserialize)]
+pub struct StepRequest {
+    /// Décision sur une action suspendue. Absente = simple avancée.
+    #[serde(default)]
+    pub approval: Option<Approval>,
+}
+
+/// Décision humaine, dans la forme exposée par HTTP.
+///
+/// Distincte de `ApprovalDecision` du runtime, et convertie explicitement :
+/// la forme du contrat HTTP ne doit pas suivre les renommages internes d'un
+/// type de domaine.
+#[derive(serde::Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum Approval {
+    /// L'action suspendue est approuvée.
+    Approve,
+    /// L'action suspendue est refusée.
+    Reject,
+}
+
+impl From<Approval> for ApprovalDecision {
+    fn from(approval: Approval) -> ApprovalDecision {
+        match approval {
+            Approval::Approve => ApprovalDecision::Approve,
+            Approval::Reject => ApprovalDecision::Reject,
+        }
+    }
+}
+
+/// UN PAS de tâche, par HTTP — la tranche verticale traversée par le binaire.
+///
+/// Relecture de l'état en base, politique, exécution éventuelle, débit,
+/// attestations, écriture : tout se passe dans `driver::run_task_step`, dans
+/// une transaction posée sur `Db::org_transaction`. Ce handler ne fait que
+/// transporter — il ne décide de rien et n'écrit aucune ligne lui-même.
+async fn advance_task(
+    State(state): State<AppState>,
+    Path((org, task)): Path<(uuid::Uuid, uuid::Uuid)>,
+    Json(body): Json<StepRequest>,
+) -> (StatusCode, String) {
+    let Some(agent) = state.agent else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "aucun fournisseur de modèle n'est branché sur ce serveur".to_owned(),
+        );
+    };
+    match kollega_store::driver::run_task_step(
+        &state.db,
+        org,
+        task,
+        agent.model.as_ref(),
+        agent.tools.as_ref(),
+        &agent.rules,
+        body.approval.map(ApprovalDecision::from),
+    )
+    .await
+    {
+        Ok(step) => {
+            let corps = serde_json::json!({
+                "status": step.status,
+                "balance_cents": step.org_balance.0,
+                "conclusion": step.conclusion,
+            });
+            (StatusCode::OK, corps.to_string())
+        }
+        // Une tâche absente du contexte d'organisation courant est
+        // indiscernable d'une tâche inexistante — même raisonnement que pour
+        // la lecture : distinguer les deux permettrait de les énumérer.
+        Err(StoreError::TaskNotFound) => (StatusCode::NOT_FOUND, "inconnue".to_owned()),
+        Err(e) => {
+            tracing::error!(erreur = %e, "pas de tâche impossible");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "pas impossible".to_owned(),
+            )
+        }
+    }
 }
 
 /// Corps de création d'une tâche.

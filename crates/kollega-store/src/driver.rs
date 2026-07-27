@@ -87,7 +87,7 @@ fn derive_tool_call_id(task_id: Uuid, iteration: u32) -> Uuid {
 /// (`performed`) et persistés dans la transaction du pas : soit le pas
 /// entier est validé — effet et sa trace ensemble —, soit rien.
 struct IdempotentTools<'a> {
-    inner: &'a dyn ToolRunner,
+    inner: &'a (dyn ToolRunner + Send + Sync),
     known: BTreeMap<u32, String>,
     performed: RefCell<Vec<(u32, String, String)>>,
 }
@@ -518,8 +518,8 @@ pub async fn run_task_step(
     db: &Db,
     org_id: Uuid,
     task_id: Uuid,
-    model: &dyn ModelProvider,
-    tools: &dyn ToolRunner,
+    model: &(dyn ModelProvider + Send + Sync),
+    tools: &(dyn ToolRunner + Send + Sync),
     rules: &[ToolRule],
     approval: Option<ApprovalDecision>,
 ) -> Result<SliceStep, StoreError> {
@@ -572,8 +572,8 @@ async fn try_task_step(
     db: &Db,
     org_id: Uuid,
     task_id: Uuid,
-    model: &dyn ModelProvider,
-    tools: &dyn ToolRunner,
+    model: &(dyn ModelProvider + Send + Sync),
+    tools: &(dyn ToolRunner + Send + Sync),
     rules: &[ToolRule],
     approval: Option<ApprovalDecision>,
 ) -> Result<SliceStep, StoreError> {
@@ -634,18 +634,29 @@ async fn try_task_step(
 
     // La machine — pure, sans horloge, sans base — et son exécuteur rendu
     // idempotent par la mémoire des effets.
+    //
+    // L'exécuteur idempotent vit dans un BLOC, et meurt avec lui — avant le
+    // premier `await` qui suit. Ce n'est pas une élégance : sa `RefCell`
+    // n'est pas `Sync`, donc tant qu'il restait vivant à travers un `await`,
+    // le futur de ce pas n'était pas `Send`. Un test mono-tâche ne le voyait
+    // pas ; un serveur multi-thread, lui, ne peut PAS appeler un tel futur —
+    // `axum` refuse le handler à la compilation. La tranche ne pouvait donc
+    // pas traverser le binaire tant que ce bloc n'existait pas.
     let audit_before = state.audit.len();
-    let idempotent = IdempotentTools {
-        inner: tools,
-        known,
-        performed: RefCell::new(Vec::new()),
+    let performed = {
+        let idempotent = IdempotentTools {
+            inner: tools,
+            known,
+            performed: RefCell::new(Vec::new()),
+        };
+        drive(&mut state, model, rules, &idempotent, approval);
+        idempotent.performed.into_inner()
     };
-    drive(&mut state, model, rules, &idempotent, approval);
 
     // Les effets NOUVEAUX : leur trace part dans la même transaction que le
     // pas. Soit l'effet et sa mémoire sont validés ensemble, soit le pas
     // entier est annulé et l'effet sera reconnu comme non enregistré.
-    for (iteration, tool, result) in idempotent.performed.into_inner() {
+    for (iteration, tool, result) in performed {
         // Le résultat passe par le dépôt de contenu, et son empreinte est
         // CALCULÉE par le type du domaine — plus de hachage à la main ici.
         let content = AuditContent::new(OrgId::new(org_id), ContentPayload::new(result));

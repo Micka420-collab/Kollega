@@ -8,8 +8,14 @@ description = "HTTP + SSE, rendu serveur"
 argon2.workspace = true
 axum.workspace = true
 kollega-core = { path = "../kollega-core" }
+# La route qui fait AVANCER une tâche a besoin des règles (politique) et des
+# ports du runtime (modèle, outils) : ce sont les types que le serveur
+# transporte jusqu'au pilote. Ni l'un ni l'autre ne fait d'entrée-sortie.
+kollega-policy = { path = "../kollega-policy" }
+kollega-runtime = { path = "../kollega-runtime" }
 kollega-store = { path = "../kollega-store" }
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 # `serve_until` prend une socket tokio et rend la main sur un futur d'arrêt.
 tokio.workspace = true

@@ -66,7 +66,9 @@ async fn the_server_actually_starts_and_answers_on_health() {
         .expect("écoute");
     let addr = listener.local_addr().expect("adresse locale");
     let server = tokio::spawn(async move {
-        axum::serve(listener, kollega_api::router(db)).await.ok();
+        axum::serve(listener, kollega_api::router(db, None))
+            .await
+            .ok();
     });
 
     let mut socket = tokio::net::TcpStream::connect(addr)
