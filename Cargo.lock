@@ -896,7 +896,9 @@ dependencies = [
  "argon2",
  "axum",
  "kollega-store",
+ "sqlx",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

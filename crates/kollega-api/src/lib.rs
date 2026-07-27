@@ -29,8 +29,7 @@ async fn health(State(db): State<Db>) -> (StatusCode, &'static str) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles() {}
-}
+// Le `fn crate_compiles() {}` qui vivait ici a été retiré le 29/07 : il ne
+// prouvait rien de plus que le compilateur, tout en comptant comme un test
+// vert. La couche HTTP est désormais éprouvée par `tests/health_endpoint.rs`,
+// qui démarre un vrai serveur sur une vraie socket.

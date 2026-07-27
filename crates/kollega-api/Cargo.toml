@@ -9,3 +9,10 @@ argon2.workspace = true
 axum.workspace = true
 kollega-store = { path = "../kollega-store" }
 thiserror.workspace = true
+
+# Le seul test qui DÉMARRE réellement le serveur (tests/health_endpoint.rs)
+# a besoin d'un exécuteur et d'une socket ; `sqlx` sert uniquement à
+# dériver l'URL du rôle applicatif depuis celle des migrations.
+[dev-dependencies]
+sqlx.workspace = true
+tokio.workspace = true
