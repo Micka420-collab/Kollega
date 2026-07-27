@@ -1,5 +1,43 @@
 # État de session — mis à jour après chaque bloc
 
+> **29/07/2026 — reprise de la boucle. Quatre gardes, toutes vérifiées par
+> sabotage.** 197 tests. Le fil conducteur de cette reprise n'est pas
+> d'ajouter des fonctions, c'est de **vérifier que les preuves prouvent** —
+> parce qu'à ce stade le risque n'est plus d'écrire du code faux, c'est de
+> croire un tableau vert.
+>
+> 1. **Invariant 11, par transitivité** (dette du backlog du 26/07). La
+>    liste blanche ne lisait que les manifestes, donc le *déclaré* ; la
+>    fermeture est désormais lue dans le graphe résolu. Sabotage : ajouter
+>    `tokio` au domaine révèle **tokio, socket2 et mio**. Le domaine ne
+>    tire par ailleurs ni entropie ni horloge — la reprise dépend de son
+>    déterminisme, et l'unification des features de cargo empêche le
+>    compilateur de défendre cette frontière.
+> 2. **Se sauter en CI devient un échec.** Sept tests exigent une base
+>    réelle et se sautaient sans elle ; cette base ne leur était fournie
+>    que par UNE ligne de `ci.yml`. La retirer aurait rendu sept tests
+>    verts en ne prouvant plus rien, pendant que six lignes de la matrice
+>    auraient continué d'afficher « OUI — CI ».
+> 3. **L'inventaire des crates branchées nulle part devient mécanique**, et
+>    il échoue dans les deux sens : une nouvelle orpheline rougit, et une
+>    orpheline qu'on branche rougit aussi — pour forcer la mise à jour du
+>    README à l'instant où l'état change, plutôt qu'après.
+> 4. **Invariant 13 : chaque montée a sa descente**, ou dit pourquoi non.
+>    Le job prouvait que les descentes existantes ramènent au vierge, pas
+>    qu'une migration en ait une — et une migration de DONNÉES serait
+>    passée sans laisser de trace dans un `pg_dump --schema-only`.
+>
+> **La trouvaille de fond, à toi :** `kollega-model` — 273 lignes, contrat
+> `ModelProvider` réel, `ApiKey` expurgée, quatre modes d'échec — n'est
+> utilisé par **aucune crate**. La boucle appelle un port homonyme qui ne
+> reçoit qu'un numéro d'itération. C'est le défaut du trait `PolicyEngine`
+> supprimé la veille, à l'identique. Conséquences : l'invariant 7 n'a, en
+> aval de l'assemblage, aucun chemin réel à protéger ; et l'invariant 5 ne
+> deviendra « vérifié AVANT » que quand la boucle recevra l'estimation que
+> `ModelRequest` porte déjà — l'option 1 n'est pas à concevoir, elle est à
+> brancher. Le branchement engage la conception de la boucle d'agent
+> (M3/M4) : consigné dans `questions-nuit.md`, pas tranché seul.
+
 > **Nuit du 28 au 29/07/2026 — session en boucle auto-cadencée. TERMINÉE.**
 >
 > Les six priorités du brief ont été faites, puis cinq invariants ont été
