@@ -873,7 +873,33 @@ mod tests {
         // Une enveloppe SANS version est refusée aussi : le champ n'est pas
         // optionnel, un état nu d'avant le bloc 5 ne passe pas pour une
         // enveloppe.
-        assert!(serde_json::from_str::<TaskStateEnvelope>(r#"{"state":{}}"#).is_err());
+        //
+        // L'essai précédent écrivait `{"state":{}}` et se contentait d'un
+        // `is_err()`. Il passait — mais très probablement parce que l'état
+        // VIDE est invalide, pas parce que la version manque : les deux
+        // fautes étaient présentes à la fois, et rien ne disait laquelle
+        // avait été détectée. L'intention annoncée n'était donc pas prouvée.
+        //
+        // Ici l'état est PARFAITEMENT valide et seule la version manque : le
+        // refus ne peut venir que d'elle, et l'assertion le vérifie par le
+        // message.
+        let scelle = serde_json::to_string(&TaskStateEnvelope::seal(TaskState::new(
+            8,
+            budget(10_000, 10_000),
+        )))
+        .expect("sérialisation d'une enveloppe valide");
+        let sans_version = scelle.replace(&format!("\"version\":{TASK_STATE_FORMAT_VERSION},"), "");
+        assert!(
+            !sans_version.contains("\"version\""),
+            "la version doit avoir été retirée : {sans_version}"
+        );
+        let error = serde_json::from_str::<TaskStateEnvelope>(&sans_version)
+            .expect_err("une enveloppe sans version doit être refusée");
+        assert!(
+            error.to_string().contains("version"),
+            "le refus doit nommer le champ manquant, sinon il pourrait venir \
+             de tout autre chose : {error}"
+        );
     }
 
     #[test]
