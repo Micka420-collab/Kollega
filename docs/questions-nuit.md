@@ -1,5 +1,32 @@
 # Questions des sessions autonomes
 
+## 29/07 — invariant 5 : « vérifié AVANT l'appel de modèle », non tenu
+
+Ce qui EST tenu et prouvé : le client ne consomme jamais à découvert, y
+compris sous concurrence réelle (test à deux tâches parallèles, solde
+verrouillé et rechargé). Ce qui ne l'est PAS : la lettre de l'invariant
+dit « vérifié avant CHAQUE appel de modèle », or le coût n'est connu
+qu'après l'appel — on facture donc après. Un client à solde nul déclenche
+un appel de modèle réel, payé par la plateforme, avant l'arrêt.
+
+**Trois options, aucune tranchée seul** (elles engagent le produit) :
+
+1. **Réservation** : bloquer un montant estimé avant l'appel, ajuster
+   après. Correct, mais suppose une estimation ; si elle est trop basse,
+   le découvert revient ; trop haute, le client voit son solde amputé
+   pendant l'appel.
+2. **Seuil plancher** : refuser de démarrer un pas si le solde est sous un
+   minimum (par exemple le coût maximal d'une itération). Simple, pas
+   exact, mais ferme le cas « solde nul ou dérisoire » — celui qui compte.
+3. **Assumer et l'écrire** : la plateforme avance le coût d'un appel au
+   plus par tâche arrêtée. C'est une perte bornée et connue ; il faudrait
+   alors corriger la formulation de l'invariant 1 dans CLAUDE.md plutôt
+   que de laisser le texte promettre plus que le code.
+
+Ma recommandation : **2 puis 3** — le seuil plancher ferme le cas réel, et
+la formulation de la constitution devrait dire ce que le système fait.
+Une correction de CLAUDE.md exige un ADR : je ne l'ai pas écrite seul.
+
 ## Nuit du 28 au 29/07 — objection de conception sur le bloc 3c
 
 **Le bloc 3c est inapplicable TEL QUEL à `ChainedEntry`, et pour une bonne
