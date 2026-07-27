@@ -8,6 +8,7 @@
 //! Exige `TEST_MIGRATE_DATABASE_URL` (fournie en CI) ; sauté sinon, avec un
 //! message explicite.
 
+use kollega_audit::records::ViolationKind;
 use kollega_core::{Cents, TaskStatus};
 use kollega_policy::ToolRule;
 use kollega_runtime::machine::{ApprovalDecision, ModelProvider, PlannedAction, ToolRunner};
@@ -497,14 +498,31 @@ async fn the_vertical_slice_goes_through() {
         .await
         .expect("lecture de la séquence");
     assert!(
-        report.is_valid(),
-        "la séquence réelle doit être valide : {:?}",
-        report.violations
-    );
-    assert!(
         report.open_calls.is_empty(),
         "toutes les tâches sont terminées, aucun appel ne doit rester ouvert : {:?}",
         report.open_calls
+    );
+    // TROUVAILLE D'INTÉGRATION (CI n°32, rouge sur ce test) : l'idempotence
+    // protège l'EFFET, pas l'ATTESTATION. En remettant l'état de T3 en
+    // arrière APRÈS un pas déjà committé — ce que la production ne fait
+    // jamais, une transaction annulée n'ayant rien écrit —, le journal a
+    // reçu une SECONDE clôture pour le même appel : il prétend que l'outil
+    // s'est exécuté deux fois alors qu'il ne l'a fait qu'une. Le validateur
+    // le dénonce, et c'est exactement ce qu'on lui demande.
+    //
+    // On l'ASSERTE plutôt que de l'esquiver : c'est la preuve que la
+    // validation de séquence attrape une incohérence RÉELLE, produite par
+    // une manipulation réelle — et non seulement des cas de laboratoire.
+    assert_eq!(
+        report.violations.len(),
+        1,
+        "une seule incohérence attendue, celle fabriquée en 6 bis : {:?}",
+        report.violations
+    );
+    assert_eq!(
+        report.violations[0].kind,
+        ViolationKind::DuplicateClosure,
+        "la restauration d'état a produit une double clôture"
     );
 
     // Une tâche SUSPENDUE laisse un appel OUVERT — information, pas
@@ -528,16 +546,76 @@ async fn the_vertical_slice_goes_through() {
     let report = driver::verify_org_sequence(&db, org)
         .await
         .expect("séquence avec appel en attente");
-    assert!(
-        report.is_valid(),
-        "une validation en attente n'est PAS une corruption : {:?}",
-        report.violations
-    );
     assert_eq!(
         report.open_calls.len(),
         1,
         "l'appel suspendu de T5 est signalé comme ouvert"
     );
+    assert_eq!(
+        report.violations.len(),
+        1,
+        "suspendre une tâche n'AJOUTE aucune violation : une validation en \
+         attente n'est pas une corruption (asymétrie du bloc 3e) — {:?}",
+        report.violations
+    );
+
+    // Et sur une organisation VIERGE de toute manipulation, la séquence
+    // produite par le pilote est parfaitement valide.
+    let fresh = Uuid::from_u128(0x51_1D0);
+    for table in [
+        "audit_content",
+        "audit_chain",
+        "tool_call_effects",
+        "tasks",
+        "credits",
+    ] {
+        sqlx::query(&format!("DELETE FROM {table} WHERE org_id = $1"))
+            .bind(fresh)
+            .execute(&mut admin)
+            .await
+            .expect("nettoyage org vierge");
+    }
+    sqlx::query("DELETE FROM organizations WHERE id = $1")
+        .bind(fresh)
+        .execute(&mut admin)
+        .await
+        .expect("nettoyage org vierge");
+    seed_org(&db, fresh, "Org Vierge", 10_000).await;
+    let t6 = Uuid::new_v4();
+    driver::create_task(&db, fresh, t6, Cents(500), 8)
+        .await
+        .expect("création T6");
+    driver::run_task_step(
+        &db,
+        fresh,
+        t6,
+        &relance_script(),
+        &tools,
+        &relance_rules(),
+        None,
+    )
+    .await
+    .expect("T6 suspendue");
+    driver::run_task_step(
+        &db,
+        fresh,
+        t6,
+        &relance_script(),
+        &tools,
+        &relance_rules(),
+        Some(ApprovalDecision::Approve),
+    )
+    .await
+    .expect("T6 terminée");
+    let report = driver::verify_org_sequence(&db, fresh)
+        .await
+        .expect("séquence de l'org vierge");
+    assert!(
+        report.is_valid(),
+        "le pilote, laissé à lui-même, produit une séquence VALIDE : {:?}",
+        report.violations
+    );
+    assert!(report.open_calls.is_empty());
 
     // ---- 7. Isolation : l'organisation témoin ne voit RIEN -----------------
     let mut tx = db.org_transaction(witness).await.expect("tx témoin");
