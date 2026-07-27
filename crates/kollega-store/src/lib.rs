@@ -12,7 +12,7 @@
 pub mod driver;
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
-use sqlx::{Postgres, Transaction};
+use sqlx::{Acquire as _, Postgres, Transaction};
 use uuid::Uuid;
 
 /// Erreurs de la couche de persistance.
@@ -130,7 +130,25 @@ pub async fn set_app_role_password(
     let mut conn = options.connect().await?;
     let literal = password.replace('\'', "''");
     let statement = format!("ALTER ROLE kollega_app WITH LOGIN PASSWORD '{literal}'");
-    sqlx::query(&statement).execute(&mut conn).await?;
+
+    // VERROU CONSULTATIF avant l'ALTER ROLE. `ALTER ROLE` écrit dans le
+    // catalogue `pg_authid` et n'est PAS sûr en concurrence : deux appels
+    // simultanés donnent « tuple concurrently updated » (XX000), et l'un
+    // des deux échoue. Le cas n'est pas théorique — il s'est produit en CI
+    // (run n°43) entre deux tests, et il se produirait en production si
+    // deux instances exécutaient `kollega migrate` en même temps, ce qui
+    // est le scénario normal d'un redéploiement.
+    //
+    // Le verrou est TRANSACTIONNEL : libéré au commit comme au rollback,
+    // jamais laissé pendant. La clé est arbitraire mais fixe et documentée.
+    const APP_PASSWORD_LOCK: i64 = 0x6B6F_6C6C_6567_61A1; // « kollega » + marqueur
+    let mut tx = conn.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(APP_PASSWORD_LOCK)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(&statement).execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(())
 }
 

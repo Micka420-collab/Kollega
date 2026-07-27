@@ -46,6 +46,13 @@ local (l'intégration se prouve en CI), pas de clé d'API.
   hauteur, qui doit rester une erreur). Trouvé par la CI (run n°36), et
   présent à DEUX endroits : l'attestation et l'enregistrement d'effet.
   Aucun test pur ne pouvait le montrer — c'est une propriété du moteur.
+- **`ALTER ROLE` n'est PAS sûr en concurrence** (`XX000 — tuple
+  concurrently updated`). Deux appels simultanés à `set_app_role_password`
+  et l'un échoue. Découvert en CI (run n°43) entre deux tests exécutés en
+  parallèle — mais **c'est un défaut de PRODUCTION** : deux instances
+  lançant `kollega migrate` lors d'un redéploiement se seraient marché
+  dessus. Corrigé par un verrou consultatif transactionnel
+  (`pg_advisory_xact_lock`), libéré au commit comme au rollback.
 - **Une convention attrapée par clippy** : `items after a test module`. Le
   module de tests doit clore le fichier.
 - **La feature `storage-boundary` était du code mort** derrière un drapeau
