@@ -35,6 +35,17 @@ fn app_url_from(migrate_url: &str) -> String {
     )
 }
 
+/// Vrai si la réponse porte ce CODE de statut.
+///
+/// On compare le code, jamais la phrase qui le suit. Première version :
+/// `starts_with("HTTP/1.1 201 CREATED")` — rouge en intégration continue,
+/// parce que la pile HTTP émet la forme canonique `201 Created`. La phrase
+/// de motif est purement indicative dans HTTP/1.1 et un intermédiaire peut
+/// la réécrire ; s'y fier, c'est écrire un test que la casse fait tomber.
+fn a_le_statut(reponse: &str, code: u16) -> bool {
+    reponse.starts_with(&format!("HTTP/1.1 {code} "))
+}
+
 /// Envoie une requête brute et rend la réponse entière.
 async fn requete(addr: std::net::SocketAddr, brut: &str) -> String {
     let mut socket = tokio::net::TcpStream::connect(addr)
@@ -142,7 +153,7 @@ async fn a_task_is_written_and_read_back_through_http_and_never_across_orgs() {
     )
     .await;
     assert!(
-        reponse.starts_with("HTTP/1.1 201 CREATED"),
+        a_le_statut(&reponse, 201),
         "la création devait répondre 201 :\n{reponse}"
     );
 
@@ -153,7 +164,7 @@ async fn a_task_is_written_and_read_back_through_http_and_never_across_orgs() {
     )
     .await;
     assert!(
-        reponse.starts_with("HTTP/1.1 200 OK"),
+        a_le_statut(&reponse, 200),
         "la lecture devait répondre 200 :\n{reponse}"
     );
     assert!(
@@ -175,7 +186,7 @@ async fn a_task_is_written_and_read_back_through_http_and_never_across_orgs() {
     )
     .await;
     assert!(
-        reponse.starts_with("HTTP/1.1 404 NOT FOUND"),
+        a_le_statut(&reponse, 404),
         "la tâche d'une AUTRE organisation doit être indiscernable d'une \
          tâche inexistante :\n{reponse}"
     );
@@ -190,7 +201,7 @@ async fn a_task_is_written_and_read_back_through_http_and_never_across_orgs() {
     )
     .await;
     assert!(
-        reponse.starts_with("HTTP/1.1 404 NOT FOUND"),
+        a_le_statut(&reponse, 404),
         "une tâche inexistante doit rendre 404 :\n{reponse}"
     );
 
