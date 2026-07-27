@@ -8,7 +8,6 @@
 //! Exige `TEST_MIGRATE_DATABASE_URL` (fournie en CI) ; sauté sinon, avec un
 //! message explicite.
 
-use kollega_audit::records::ViolationKind;
 use kollega_core::{Cents, TaskStatus};
 use kollega_policy::ToolRule;
 use kollega_runtime::machine::{ApprovalDecision, ModelProvider, PlannedAction, ToolRunner};
@@ -502,27 +501,23 @@ async fn the_vertical_slice_goes_through() {
         "toutes les tâches sont terminées, aucun appel ne doit rester ouvert : {:?}",
         report.open_calls
     );
-    // TROUVAILLE D'INTÉGRATION (CI n°32, rouge sur ce test) : l'idempotence
-    // protège l'EFFET, pas l'ATTESTATION. En remettant l'état de T3 en
-    // arrière APRÈS un pas déjà committé — ce que la production ne fait
-    // jamais, une transaction annulée n'ayant rien écrit —, le journal a
-    // reçu une SECONDE clôture pour le même appel : il prétend que l'outil
-    // s'est exécuté deux fois alors qu'il ne l'a fait qu'une. Le validateur
-    // le dénonce, et c'est exactement ce qu'on lui demande.
+    // HISTOIRE DE CE TEST — elle vaut d'être lue. La CI (run n°32) a
+    // rougi ici : l'idempotence protège l'EFFET, pas l'ATTESTATION. En
+    // remettant l'état de T3 en arrière après un pas déjà committé — ce
+    // qu'une RESTAURATION PARTIELLE de sauvegarde fait —, le journal
+    // recevait une seconde clôture pour le même appel : il prétendait que
+    // l'outil s'était exécuté deux fois, alors que l'idempotence l'avait
+    // justement empêché. Le validateur l'a dénoncé immédiatement.
     //
-    // On l'ASSERTE plutôt que de l'esquiver : c'est la preuve que la
-    // validation de séquence attrape une incohérence RÉELLE, produite par
-    // une manipulation réelle — et non seulement des cas de laboratoire.
-    assert_eq!(
-        report.violations.len(),
-        1,
-        "une seule incohérence attendue, celle fabriquée en 6 bis : {:?}",
+    // La migration 0005 rend désormais ce mensonge IMPOSSIBLE (unicité sur
+    // `(org, tool_call_id, action)`), et l'écriture d'attestation est
+    // devenue idempotente elle aussi. D'où l'assertion inverse : même
+    // après la manipulation de 6 bis, la séquence reste SAINE.
+    assert!(
+        report.is_valid(),
+        "la double attestation est désormais impossible, pas seulement \
+         détectable : {:?}",
         report.violations
-    );
-    assert_eq!(
-        report.violations[0].kind,
-        ViolationKind::DuplicateClosure,
-        "la restauration d'état a produit une double clôture"
     );
 
     // Une tâche SUSPENDUE laisse un appel OUVERT — information, pas
@@ -551,10 +546,9 @@ async fn the_vertical_slice_goes_through() {
         1,
         "l'appel suspendu de T5 est signalé comme ouvert"
     );
-    assert_eq!(
-        report.violations.len(),
-        1,
-        "suspendre une tâche n'AJOUTE aucune violation : une validation en \
+    assert!(
+        report.is_valid(),
+        "suspendre une tâche n'ajoute AUCUNE violation : une validation en \
          attente n'est pas une corruption (asymétrie du bloc 3e) — {:?}",
         report.violations
     );

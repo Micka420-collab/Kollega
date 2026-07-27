@@ -277,7 +277,21 @@ impl AuditChainRepository for PgAuditChain<'_> {
         match inserted {
             Ok(_) => Ok(()),
             Err(sqlx::Error::Database(db)) if db.code().as_deref() == Some("23505") => {
-                Err(StoreError::ChainConflict)
+                // DEUX unicités, deux significations opposées — les
+                // confondre serait rejouer un pas qui n'a rien à rejouer.
+                match db.constraint() {
+                    // La hauteur est prise : un AUTRE écrivain a avancé la
+                    // chaîne. Le pas entier est à rejouer.
+                    Some("audit_chain_pkey") | None => Err(StoreError::ChainConflict),
+                    // Cet appel a DÉJÀ cette attestation. Ce n'est pas une
+                    // course : c'est un pas rejoué après une restauration
+                    // d'état. Ré-attester ferait dire au journal que
+                    // l'outil s'est exécuté deux fois — un mensonge, alors
+                    // que l'idempotence l'a justement empêché. L'écriture
+                    // est donc idempotente elle aussi : rien à ajouter,
+                    // l'attestation existante fait foi.
+                    Some(_) => Ok(()),
+                }
             }
             Err(e) => Err(e.into()),
         }

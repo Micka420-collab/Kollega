@@ -96,12 +96,13 @@ deux implémentations indépendantes » est donc fondée, pas décorative.
 
 ## 6. Inquiétudes
 
-- **La double attestation lors d'une restauration** est maintenant
-  détectée, mais pas empêchée. Si tu restaures un jour une sauvegarde
-  partielle, le journal portera une incohérence — visible, tracée, mais
-  réelle. La bonne réponse serait de rendre l'attestation idempotente elle
-  aussi (clé unique sur `(org, tool_call_id, action)`), ce que je n'ai pas
-  fait seul : ça change le schéma de la chaîne.
+- ~~La double attestation lors d'une restauration est détectée mais pas
+  empêchée.~~ **CORRIGÉ dans la foulée** (migration 0005) : unicité sur
+  `(org, tool_call_id, action)`, et l'écriture d'attestation est devenue
+  idempotente elle aussi. Le pilote distingue désormais DEUX violations
+  d'unicité aux sens opposés — hauteur prise (course d'écrivains → rejeu du
+  pas) et attestation déjà présente (pas rejoué → rien à ajouter). Les
+  confondre aurait fait rejouer un pas qui n'avait rien à rejouer.
 - **`verify_org_sequence` charge toute la chaîne** — comme `verify`. À
   repenser en flux avant des volumes réels.
 - Le README affirme beaucoup de choses ; chacune est adossée à un test
