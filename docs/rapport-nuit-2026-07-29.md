@@ -38,6 +38,14 @@ local (l'intégration se prouve en CI), pas de clé d'API.
   un hachage qui ment, sinon `verify` n'a plus rien à dénoncer. D'où deux
   types : l'entrée *produite* ne peut pas mentir (forger ne compile pas),
   l'entrée *relue* le peut.
+- **En PostgreSQL, une violation de contrainte AVORTE la transaction
+  entière** (`25P02`). Attraper le `23505` « au passage » pour continuer ne
+  marche pas : tout ce qui suit échoue. Il faut déclarer À L'AVANCE quel
+  conflit est acceptable (`ON CONFLICT … DO NOTHING`, **ciblé** sur la
+  contrainte tolérable — sans ciblage on avalerait aussi le conflit de
+  hauteur, qui doit rester une erreur). Trouvé par la CI (run n°36), et
+  présent à DEUX endroits : l'attestation et l'enregistrement d'effet.
+  Aucun test pur ne pouvait le montrer — c'est une propriété du moteur.
 - **Une convention attrapée par clippy** : `items after a test module`. Le
   module de tests doit clore le fichier.
 - **La feature `storage-boundary` était du code mort** derrière un drapeau

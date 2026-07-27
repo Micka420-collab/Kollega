@@ -257,11 +257,22 @@ impl AuditChainRepository for PgAuditChain<'_> {
             },
         );
 
+        // ON CONFLICT CIBLÉ, et le ciblage est tout le sujet : en
+        // PostgreSQL, une violation de contrainte AVORTE la transaction
+        // entière (25P02) — l'attraper « au passage » pour continuer ne
+        // marche pas, tout ce qui suit échoue. Il faut donc dire à l'avance
+        // quel conflit est acceptable.
+        //   * attestation déjà présente (pas rejoué) → DO NOTHING, la
+        //     transaction reste saine et l'écriture devient idempotente ;
+        //   * hauteur déjà prise (course d'écrivains) → NON couvert ici,
+        //     l'erreur remonte et le pas entier se rejoue. C'est voulu.
         let inserted = sqlx::query(
             "INSERT INTO audit_chain \
              (org_id, height, prev_hash, entry_hash, actor, action, tool_call_id, \
               content_digest, timestamp_micros) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
+             ON CONFLICT ON CONSTRAINT audit_chain_one_attestation_per_call_action \
+             DO NOTHING",
         )
         .bind(self.org_id)
         .bind(i64::try_from(entry.height()).unwrap_or(i64::MAX))
@@ -276,22 +287,10 @@ impl AuditChainRepository for PgAuditChain<'_> {
         .await;
         match inserted {
             Ok(_) => Ok(()),
+            // Ne reste que le conflit de HAUTEUR : un autre écrivain a
+            // avancé la chaîne, le pas entier se rejoue.
             Err(sqlx::Error::Database(db)) if db.code().as_deref() == Some("23505") => {
-                // DEUX unicités, deux significations opposées — les
-                // confondre serait rejouer un pas qui n'a rien à rejouer.
-                match db.constraint() {
-                    // La hauteur est prise : un AUTRE écrivain a avancé la
-                    // chaîne. Le pas entier est à rejouer.
-                    Some("audit_chain_pkey") | None => Err(StoreError::ChainConflict),
-                    // Cet appel a DÉJÀ cette attestation. Ce n'est pas une
-                    // course : c'est un pas rejoué après une restauration
-                    // d'état. Ré-attester ferait dire au journal que
-                    // l'outil s'est exécuté deux fois — un mensonge, alors
-                    // que l'idempotence l'a justement empêché. L'écriture
-                    // est donc idempotente elle aussi : rien à ajouter,
-                    // l'attestation existante fait foi.
-                    Some(_) => Ok(()),
-                }
+                Err(StoreError::ChainConflict)
             }
             Err(e) => Err(e.into()),
         }
@@ -590,10 +589,17 @@ async fn try_task_step(
         }
         .put(&content)
         .await?;
-        let recorded = sqlx::query(
+        // MÊME PIÈGE, second endroit — révélé par le diagnostic de la run
+        // n°36 : ici aussi, attraper le 23505 pour « continuer » aurait
+        // avorté la transaction et fait échouer les écritures suivantes
+        // (état de tâche, solde). Les DEUX unicités de cette table
+        // signifient la même chose — l'effet est déjà enregistré — donc
+        // `DO NOTHING` sans cible est correct : la trace existante fait foi.
+        sqlx::query(
             "INSERT INTO tool_call_effects \
              (org_id, tool_call_id, task_id, iteration, tool, result_digest) \
-             VALUES ($1, $2, $3, $4, $5, $6)",
+             VALUES ($1, $2, $3, $4, $5, $6) \
+             ON CONFLICT DO NOTHING",
         )
         .bind(org_id)
         .bind(derive_tool_call_id(task_id, iteration))
@@ -602,14 +608,7 @@ async fn try_task_step(
         .bind(&tool)
         .bind(digest.as_bytes().to_vec())
         .execute(&mut *tx)
-        .await;
-        match recorded {
-            Ok(_) => {}
-            // Un autre écrivain a enregistré le MÊME effet : sa trace fait
-            // foi, la nôtre est redondante. Ce n'est pas une erreur.
-            Err(sqlx::Error::Database(db)) if db.code().as_deref() == Some("23505") => {}
-            Err(e) => return Err(e.into()),
-        }
+        .await?;
     }
 
     // Chaque événement nouveau : une attestation + un contenu.
