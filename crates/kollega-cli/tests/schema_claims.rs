@@ -32,6 +32,14 @@ const NOT_A_COLUMN: &[&str] = &[
     "LIKE",
 ];
 
+/// Tables PRÉVUES mais non construites, que la documentation a le droit de
+/// nommer — avec leur jalon, pour qu'un lecteur sache qu'il ne les
+/// trouvera pas dans le schéma d'aujourd'hui.
+const PLANNED_TABLES: &[&str] = &[
+    // ADR-0005 — authentification hors contexte, jalon M1.
+    "login_identities",
+];
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -180,5 +188,51 @@ fn no_document_names_a_column_that_does_not_exist() {
          de conception est ce qu'on suit en reprenant le travail : nommer \
          une colonne qui n'existe pas envoie chercher ce qui n'est pas là, \
          ou invite à l'ajouter en croyant réparer un oubli. {wrong:?}"
+    );
+
+    // Deuxième passe : les TABLES nommées explicitement.
+    //
+    // Trouvée le 29/07 : l'ADR-0003 parlait d'une « table `audit_log` », nom
+    // qui n'a jamais existé — le journal est réalisé en `audit_chain` et
+    // `audit_content`. La première passe ne pouvait pas le voir : elle ne
+    // regarde que les jetons `table.colonne`.
+    //
+    // Le déclencheur est le mot « table » suivi d'un jeton entre accents
+    // graves. Étroit exprès : une prose qui parle de « la table des
+    // mandats » sans accents graves ne désigne pas un objet du schéma, et
+    // n'a pas à être vérifiée.
+    let mut unknown_tables = Vec::new();
+    for path in &documents {
+        let Ok(text) = fs::read_to_string(path) else {
+            continue;
+        };
+        let lowered = text.to_lowercase();
+        let mut from = 0;
+        while let Some(at) = lowered[from..].find("table `") {
+            let start = from + at + "table `".len();
+            from = start;
+            let Some(end) = lowered[start..].find('`') else {
+                break;
+            };
+            let name = &lowered[start..start + end];
+            if !name.is_empty()
+                && name.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                && !schema.contains_key(name)
+                && !PLANNED_TABLES.contains(&name)
+            {
+                unknown_tables.push(format!(
+                    "{} nomme la table `{name}`, qui n'existe pas",
+                    path.file_name().unwrap_or_default().to_string_lossy()
+                ));
+            }
+        }
+    }
+    assert!(
+        unknown_tables.is_empty(),
+        "table(s) nommée(s) dans la documentation et absente(s) du schéma : \
+         {unknown_tables:?}. Si la table est PRÉVUE et non construite, \
+         l'inscrire dans PLANNED_TABLES avec son jalon — l'y ajouter est un \
+         acte conscient, et c'est le but : un lecteur ne peut pas deviner \
+         seul si un nom désigne l'existant ou le projeté."
     );
 }

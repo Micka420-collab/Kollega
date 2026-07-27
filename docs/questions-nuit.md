@@ -209,8 +209,9 @@ Rien n'a été câblé cette session.
   (`OrgChain::append`) DANS LA MÊME transaction que l'état de tâche — le
   `Vec<AuditEvent>` local devient un simple tampon d'émission, jamais une
   source de vérité. À trancher par toi : (a) l'arête runtime→audit dans le
-  graphe ; (b) qui détient la queue de chaîne (table `audit_log`, verrou
-  par organisation — rejoint `docs/credits-concurrence.md`) ; (c) le refus
+  graphe ; (b) qui détient la queue de chaîne (table `audit_chain` — le nom
+  `audit_log` écrit ici le 28/07 n'a jamais existé ; corrigé le 29/07 —,
+  verrou par organisation, rejoint `docs/credits-concurrence.md`) ; (c) le refus
   explicite de toute horloge dans le pur.
 - **Couture moteur de politiques réel.** Option recommandée :
   `PlannedAction::UseTool` porte un `ToolCallRequest` COMPLET (montant,
