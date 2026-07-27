@@ -53,6 +53,30 @@ fn collect_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Vrai si, après l'accolade ouvrante, le corps ne contient RIEN — ni
+/// instruction, ni expression, seulement des blancs et des commentaires.
+///
+/// Écrit ainsi plutôt qu'en cherchant le littéral `() {}` : la première
+/// version de cette garde ne reconnaissait que cette forme exacte, et se
+/// laissait contourner par un corps vide écrit sur deux lignes ou par
+/// `() { }`. `cargo fmt --check`, imposé en CI, ramène en pratique ces
+/// formes à `{}` — mais faire dépendre cette garde du comportement de
+/// rustfmt était un couplage invisible : il suffisait d'assouplir la règle
+/// de format, jugée cosmétique, pour rouvrir le trou sans s'en apercevoir.
+fn body_is_empty(after_open_brace: &str) -> bool {
+    let mut rest = after_open_brace;
+    loop {
+        rest = rest.trim_start();
+        let Some(stripped) = rest.strip_prefix("//") else {
+            return rest.starts_with('}');
+        };
+        match stripped.find('\n') {
+            Some(end) => rest = &stripped[end..],
+            None => return false,
+        }
+    }
+}
+
 #[test]
 fn no_test_has_an_empty_body() {
     let root = workspace_root();
@@ -68,29 +92,42 @@ fn no_test_has_an_empty_body() {
     let mut tests_seen = 0_usize;
     for path in &sources {
         let content = fs::read_to_string(path).expect("lecture d'une source");
-        // On garde la trace du dernier attribut de test rencontré : la
-        // fonction qui suit est un test, quelles que soient les lignes
-        // d'attributs ou de commentaires intercalées.
-        let mut pending_test = false;
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if TEST_ATTRIBUTES.contains(&trimmed) {
-                pending_test = true;
+        for attribute in TEST_ATTRIBUTES {
+            let mut from = 0;
+            while let Some(at) = content[from..].find(attribute) {
+                let start = from + at + attribute.len();
+                from = start;
                 tests_seen += 1;
-                continue;
-            }
-            if !pending_test || trimmed.is_empty() || trimmed.starts_with("//") {
-                continue;
-            }
-            if trimmed.starts_with("fn ") || trimmed.starts_with("async fn ") {
-                if trimmed.ends_with("() {}") {
-                    placebos.push(format!("{} : {trimmed}", path.display()));
+                // La signature suit l'attribut, éventuellement après
+                // d'autres attributs ou des commentaires. On borne la
+                // recherche : au-delà, ce n'est plus la fonction annotée.
+                // Fenêtre ramenée à une frontière de caractère : couper
+                // à l'octet près traverserait un accent des commentaires
+                // français et paniquerait.
+                let mut end = content.len().min(start + 400);
+                while !content.is_char_boundary(end) {
+                    end -= 1;
                 }
-                pending_test = false;
-            } else if !trimmed.starts_with('#') {
-                // Autre chose qu'un attribut ou une signature : l'attribut
-                // ne portait pas sur une fonction, on ne conclut rien.
-                pending_test = false;
+                let window = &content[start..end];
+                let Some(fn_at) = window.find("fn ") else {
+                    continue;
+                };
+                let signature = &window[fn_at..];
+                let Some(close) = signature.find(')') else {
+                    continue;
+                };
+                let Some(brace) = signature[close..].find('{') else {
+                    continue;
+                };
+                if body_is_empty(&signature[close + brace + 1..]) {
+                    let name: String = signature
+                        .chars()
+                        .take_while(|c| *c != '(')
+                        .collect::<String>()
+                        .trim()
+                        .to_owned();
+                    placebos.push(format!("{} : {name}()", path.display()));
+                }
             }
         }
     }
