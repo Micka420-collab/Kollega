@@ -153,6 +153,29 @@
 >     — aucune ligne de crédit ne subsistait. Corrigé, CI n°94 verte. Les
 >     rouges restent dans l'historique plutôt que réécrits.
 >
+> 19. **Assertions faibles : trois autres, dont la seule preuve de
+>     l'invariant 12.** `no_physical_deletion` se contentait de
+>     `attempt.is_err()` sur six tables — vert sur une faute de frappe
+>     (42P01), une transaction déjà avortée, ou un refus de CLÉ ÉTRANGÈRE
+>     (23503), ce dernier cas n'ayant rien de théorique pour
+>     `organizations`, dont dépendent quatre tables. On aurait eu une
+>     preuve verte de l'invariant 12 ne disant rien des **privilèges**,
+>     c'est-à-dire du mécanisme qui le porte. Le code 42501 est désormais
+>     exigé nommément, ici et sur les deux refus équivalents de la tranche
+>     verticale. À retenir : le sabotage de la CI n°65 avait prouvé la
+>     sensibilité **pour `users`** — elle ne se transportait pas aux cinq
+>     autres tables.
+> 20. **Les ADR 0003 et 0004 étaient les documents les plus abîmés.**
+>     Titres portant le numéro d'un AUTRE ADR (renumérotation du pivot non
+>     répercutée) ; une « table `audit_log` » qui n'a jamais existé (c'est
+>     `audit_chain` + `audit_content`) ; et **trois références d'invariant
+>     périmées** de la numérotation v1 — la réversibilité rattachée au 12
+>     au lieu du 13, l'absence d'E/S au 9 au lieu du 11. Les numéros
+>     périmés sont une classe d'erreur récurrente, à surveiller. Deux
+>     gardes ajoutées : les NOMS DE TABLES cités dans la documentation
+>     (avec une liste explicite des tables PRÉVUES, jalon à l'appui), et
+>     le titre d'un ADR adossé au numéro de son fichier.
+>
 > **Deux corrections de README dans le sens de la MODESTIE**, à noter parce
 > qu'elles surprennent : il annonçait `kollega-model` comme un squelette de
 > 9 lignes (il en fait 273) et « pas de serveur HTTP servi, pas de
