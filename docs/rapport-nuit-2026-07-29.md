@@ -117,6 +117,11 @@ la cause du `25P02` et du `XX000` en une lecture chacun.
   « on ne supprime pas », pas du côté « on efface proprement ».
 - **`verify_org_chain` et `verify_org_sequence` chargent tout en mémoire.**
   À repenser en flux avant des volumes réels.
-- Le README affirme beaucoup ; chaque affirmation est adossée à un test
-  exécuté en CI. **Aucun mécanisme ne relie les deux** : si un test était
-  désactivé, le README deviendrait faux en silence.
+- ~~Aucun mécanisme ne relie le README aux tests qui le soutiennent.~~
+  **FERMÉ en fin de nuit** : `claims_are_backed.rs` vérifie que chaque test
+  nommé dans la matrice existe réellement — une preuve disparue fait
+  désormais rougir la CI. Et cette garde a elle-même été sabotée : la
+  première version cherchait `fn <nom>` par sous-chaîne et laissait passer
+  un renommage par suffixe (`fn essai` reste dans `fn essai_bis`) ; elle ne
+  prouvait donc pas ce que je croyais. Corrigée par frontière de mot,
+  re-sabotée, rouge cette fois.
